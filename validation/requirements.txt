@@ -1,0 +1,7 @@
+transformers>=4.44
+torch
+opencv-python
+ultralytics
+huggingface_hub
+Pillow
+numpy

@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project-specific: raw footage and validation script outputs
+footage/*
+!footage/test/
+footage/test/*
+!footage/test/.gitkeep
+validation/output/
+validation/weights/
+
+# macOS
+.DS_Store
+
