@@ -57,6 +57,13 @@ DEFAULT_MAX_LOW_CONF_KEYPOINTS = 5     # flag frame if this many (of 17) keypoin
 # ViTPose++ MoE expert index for the COCO-trained head (0=COCO val, 1=AIC,
 # 2=MPII, 3=AP-10K, 4=APT-36K, 5=COCO-WholeBody). Not a modelling choice —
 # this is fixed by which expert the checkpoint calls "COCO".
+#
+# Tried 5 (COCO-WholeBody expert) on 2026-10-04 hoping for foot keypoints —
+# doesn't work: the decode head is fixed at 17 channels regardless of which
+# expert is selected (verified directly: heatmap shape is [1,17,64,48] for
+# every dataset_index), and index 5's confidence scores come out uncalibrated
+# (~2-3 range instead of [0,1]), breaking every threshold in this file. See
+# DECISIONS.md D-015. Reverted to 0.
 VITPOSE_COCO_DATASET_INDEX = 0
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
