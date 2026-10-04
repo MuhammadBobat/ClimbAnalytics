@@ -29,7 +29,7 @@
 **Source(s):** none — internal project clarification.
 **Status:** proposed (awaiting supervisor response)
 
-## D-002: Pose estimation model — ViTPose-L (COCO-25)
+## D-002: Pose estimation model — ViTPose-L (17-keypoint COCO — see D-012; this heading originally said "COCO-25", corrected 2026-10-04)
 **Date:** 2026-07-27
 **Decision:** Use ViTPose-L as the primary 2D pose estimator, paired with a bounding-box selection heuristic (nearest-to-previous-frame / largest-confidence) for single-climber tracking.
 **Rationale:** highest accuracy of three benchmarked models on climbing-specific footage (86.6% vs. MediaPipe 83.5%, YOLOv8-pose 75.3%); fewest missing-detection frames (best temporal robustness); no real-time constraint in this project so ViTPose's slower inference is not a real cost; top-down architecture gives an explicit, controllable point for single-person locking.
@@ -136,7 +136,7 @@ LDLJ = -ln( (t2 - t1)^3 / v_peak^2  ·  ∫_{t1}^{t2} |d²v/dt²|² dt )
 **Decision:** Correct `ARCHITECTURE.md` §1 and §2: ViTPose-L (and every `usyd-community` ViTPose/ViTPose+ checkpoint, including `vitpose-plus-large`) outputs the standard **17-keypoint COCO format** (Nose, L/R Eye, L/R Ear, L/R Shoulder, L/R Elbow, L/R Wrist, L/R Hip, L/R Knee, L/R Ankle). No "COCO 25-keypoint" ViTPose checkpoint exists among the surveyed releases — that figure does not correspond to any real ViTPose variant and has been removed from `ARCHITECTURE.md`.
 **Rationale:** discovered directly while validating model loading for D-011 — `usyd-community/vitpose-plus-large`'s `config.id2label` returns exactly the 17 standard COCO joints, nothing more. This does not block any metric in `ARCHITECTURE.md` §4: CoM (hip/shoulder midpoints), per-joint velocity, and the four-state classifier (pelvis = hip midpoint, limbs = wrists/ankles) all use joints present in COCO-17. No scope or metric-definition change follows from this correction — it is a factual fix to the model's I/O spec only.
 **Source(s):** direct inspection of `usyd-community/vitpose-plus-large`'s loaded config in this project's environment, 2026-07-27.
-**Status:** implemented (`ARCHITECTURE.md` corrected in the same session)
+**Status:** implemented (`ARCHITECTURE.md` corrected in the same session). **Addendum (2026-10-04):** D-002's own heading in this file still said "(COCO-25)" despite this entry — a stale factual claim in a title, not just leftover prose, so fixed directly rather than left as historical colour. See D-002's heading.
 
 
 ## D-013: Cross-session scale calibration — open question, needed before attempt comparison is built
