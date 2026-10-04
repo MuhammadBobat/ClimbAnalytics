@@ -21,15 +21,15 @@ Video Input → Pose Estimation → Temporal Tracking → Feature Extraction
 | Feedback Generation | Descriptors | Natural language report (template-based, not learned) |
 | Output | Report + metrics | Annotated video w/ skeleton overlay, time-series graphs, text report |
 
-Keypoint format: standard 17-keypoint COCO convention (confirmed as the actual output of the chosen ViTPose-L checkpoint — see D-012; do not remap unnecessarily). Joint names referenced throughout this document assume standard COCO naming (`left_hip`, `right_hip`, `left_wrist`, etc.).
+Keypoint format: standard 17-keypoint COCO convention (confirmed as the actual output of the chosen ViTPose-L checkpoint, and the only format it can produce — see D-012; do not remap unnecessarily). Joint names referenced throughout this document assume standard COCO naming (`left_hip`, `right_hip`, `left_wrist`, etc.). No foot/toe keypoints are available — see D-016.
 
 ---
 
-## 2. Pose estimation model — decision made, value pending on-footage validation
+## 2. Pose estimation model — validated (qualitative) on own footage
 
-**Status: the decision *process* is complete (a specific model is chosen and justified below); the *value* is not yet locked, since it depends on a validation step against real footage that hasn't run yet.** Treat this as "proceed with ViTPose-L unless/until the validation step in this section says otherwise" — not as an unconditionally fixed fact. See `DECISIONS.md` D-002 for the authoritative status field (currently `proposed`, not `implemented`/`validated`).
+**Status: validated (qualitative) on own gym footage — see `DECISIONS.md` D-002 and D-002a.** Not yet a quantitative accuracy comparison against MediaPipe/YOLOv8-pose on *this project's* footage specifically (that would need ground-truth annotation, deferred under D-010); what's confirmed is that ViTPose-L tracks real climbers on real gym footage well enough to build the rest of the pipeline on top of, including graceful degradation under occlusion.
 
-**Currently chosen: ViTPose-L, standard 17-keypoint COCO format** (see D-012 — an earlier version of this document incorrectly stated "COCO 25-keypoint"; no such ViTPose variant exists), paired with a simple single-target bounding-box selector (nearest-to-previous-frame / largest-confidence-box heuristic) to lock onto one climber and reject bystanders walking through frame. Implementation route: HuggingFace `transformers` (`VitPoseForPoseEstimation`, checkpoint `usyd-community/vitpose-plus-large`), with YOLOv8n (`ultralytics`) as the upstream person-bounding-box source — see D-011.
+**Currently chosen: ViTPose-L, standard 17-keypoint COCO format** (no "COCO-25" variant exists — an earlier version of this document incorrectly stated that; see D-012), paired with a simple single-target bounding-box selector (nearest-to-previous-frame / largest-confidence-box heuristic) to lock onto one climber and reject bystanders walking through frame. Implementation route: HuggingFace `transformers` (`VitPoseForPoseEstimation`, checkpoint `usyd-community/vitpose-plus-large`), with YOLOv8n (`ultralytics`) as the upstream person-bounding-box source — see D-011. No foot/toe keypoints are available from this checkpoint under any configuration; ViTPose-WholeBody and MediaPipe were both evaluated as ways to get them and neither was adopted — see D-016.
 
 Reasoning (full citations in `DECISIONS.md` D-002):
 - No real-time requirement exists in this project (`PROPOSAL.md` §7), so ViTPose's slower inference (~0.25s/frame vs. MediaPipe's ~0.12s/frame) is not a real cost.
@@ -39,7 +39,7 @@ Reasoning (full citations in `DECISIONS.md` D-002):
 
 **Documented fallback:** if ViTPose proves too slow or complex to integrate in the available time, YOLOv8-pose has native multi-person tracking (ID persistence via ByteTrack in Ultralytics) which simplifies single-climber locking at an accuracy cost, particularly for feet. If this fallback is used, log it as a new `DECISIONS.md` entry with the reasoning at the time.
 
-**Action required before committing further:** replicate a short version of the Maschek & Schedl accuracy comparison on your *own* gym footage before finalising — their numbers were measured on their two specific routes/gym, not yours. Log the result as a `DECISIONS.md` entry regardless of outcome.
+**Done, as a qualitative check rather than a literal numeric replication** (see D-002a): a full quantitative re-run of Maschek & Schedl's accuracy comparison would need ground-truth joint annotation on this project's own footage, which stays deferred under D-010. What's confirmed instead is per-keypoint confidence and missing-detection rates across 5 own-gym clips, plus direct visual inspection — logged in D-002a regardless of outcome, per the original intent of this line.
 
 ---
 
@@ -132,3 +132,23 @@ output.py                 — video overlay, graphs, report assembly
 
 ## 6. Explicitly out of scope for this file
 See `PROPOSAL.md` §7 — do not add hold detection, model training/fine-tuning, real-time processing, or 3D lifting to this architecture without a corresponding scope change logged there first.
+
+---
+
+## 7. Known-groups validation (D-015)
+
+Not part of the core pipeline (stages 1–7 in §1) — this is a separate validation workflow, run alongside pipeline development, that checks calibrated thresholds against literature-predicted patterns rather than personal judgment. See `DECISIONS.md` D-015 for full rationale, sources, and the explicit limitation statement.
+
+**Prerequisite:** requires CoM (§4.3), velocity (§4.1), and four-state classification (§4.4) to be implemented — not just pose extraction. Do not attempt this before those stages exist.
+
+**Inputs required per clip:** climber ID, self-reported experience level, route grade (if known), date/gym.
+
+**Per-clip outputs required:**
+1. `% time pelvis-immobile` (Immobility + Hold Interaction) vs. `% time pelvis-moving` (Postural Regulation + Traction)
+2. `% time in Hold Interaction` (approximation of exploratory/performatory ratio — see D-015 for the stated limitation on this being an approximation, not Boulanger's exact metric)
+
+**Process:** sweep candidate `threshold_z` values (§4.4) across all clips; for each candidate, compute the two stats above per clip and compare across experience groups. Select the threshold that produces the cleanest separation in the literature-predicted direction — this doubles as the D-004 threshold selection step, not a separate pass.
+
+**Suggested location:** keep this as a standalone script (e.g. `validation/known_groups_eval.py`), outside the core module boundaries in §5 — same treatment as the existing ViTPose validation script, since it's a one-off validation workflow, not a pipeline component the main system depends on at runtime.
+
+**Explicitly not part of this check:** CoM distance-to-wall (depth-axis, not measurable with a single perpendicular 2D camera — see D-015 correction).
