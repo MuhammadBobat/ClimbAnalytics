@@ -224,6 +224,12 @@ footage/test/*
 !footage/test/.gitkeep
 validation/output/
 validation/weights/
+training/frames_to_annotate/
+training/dataset/
+training/checkpoints/
+training/colour_samples/
+hold_detection_weights/
+hold_detection_output/
 
 # macOS
 .DS_Store

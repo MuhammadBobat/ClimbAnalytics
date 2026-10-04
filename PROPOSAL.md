@@ -33,6 +33,7 @@ Original proposal goals, plus amendments made during pre-term planning (each ame
 - Rule-based, metric-driven natural language feedback. *(original — explicitly NOT a learned/LLM-based generator)*
 - Qualitative evaluation on real bouldering footage. *(original, see §7 for evaluation status)*
 - Generalisable architecture, in principle transferable to other dynamic sports. *(original)*
+- **Hold detection and route/grade assignment** via a hybrid approach: a single-class object detector (fine-tuned YOLOv8n) to localise holds, combined with classical HSV colour-matching within each detected hold to assign route/grade membership (this gym grades by hold colour). *(amendment, reverses D-009 — see `DECISIONS.md` D-017. Build has started; supervisor sign-off is still pending, see §9. Gym-specific, does not generalise without retraining — tension with this section's own generalisability goal, see D-017 Limitation 1. Reintroduces model fine-tuning, see `CLAUDE.md` rule 4, updated accordingly.)*
 
 ## 4. Assumptions (load-bearing — do not violate without a logged decision)
 
@@ -59,8 +60,8 @@ Original proposal goals, plus amendments made during pre-term planning (each ame
 
 ## 7. Explicit scope boundaries — OUT OF SCOPE
 
-- **Hold detection** (bounding-box/segmentation of climbing holds). Confirmed out of scope after reviewing BoulderVision (custom object detection + custom colour classifier, both requiring hand-annotated gym-specific datasets) and Maschek & Schedl (coach-annotated hold usage across only 22 videos still required significant specialist labour). Any hold-relative feedback ("you hesitated at hold 4") is not achievable without this and is not planned.
-- **Model fine-tuning / training of any kind.** Pretrained pose models only.
+- **Model fine-tuning / training**, except the single-class hold detector in §3 (`DECISIONS.md` D-017). Pose models remain pretrained-only.
+- **Hold-relative feedback** (e.g. "you hesitated at hold 4"), and any other feature that requires linking pose/metric data to *individual* holds over time. Not achievable from hold localisation + colour/route assignment alone (§3) — that only gives static hold positions and route membership, not a hold-interaction timeline. Remains out of scope; do not assume §3's hold detection amendment covers this too.
 - **Real-time or mobile deployment.**
 - **Learned/LLM-based feedback generation.** Feedback stays rule-based and metric-driven.
 - **Localised (hold-by-hold or DTW-aligned) attempt comparison** — see §6.
@@ -75,3 +76,4 @@ Original proposal goals, plus amendments made during pre-term planning (each ame
 
 - Clarify what specifically prompted the "manual labelling" comment (quantitative pose evaluation? hold detection? learned classifier? human-rated climb comparison for validation?) — see `DECISIONS.md` entry D-001.
 - Sign-off on adding the four-state classifier, heatmap, and whole-climb comparison to the formal proposal document.
+- **Hold detection reverses D-009 — raise before/while building, not retroactively.** `DECISIONS.md` D-017 proposes a hybrid gym-specific detector + colour-matching approach, superseding D-009's "confirmed out of scope" decision; implementation has started. It reintroduces model fine-tuning (`CLAUDE.md` rule 4 updated to carve out this one exception) and creates a gym-specific component in tension with §3's generalisability goal. Do not treat D-009's reversal as final until this conversation happens.

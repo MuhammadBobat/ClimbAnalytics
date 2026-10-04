@@ -113,7 +113,8 @@ LDLJ = -ln( (t2 - t1)^3 / v_peak^2  ·  ∫_{t1}^{t2} |d²v/dt²|² dt )
 **Decision:** No hold detection component, in any form, as core or stretch scope.
 **Rationale:** every reviewed precedent implementing hold detection required a custom-trained, gym/dataset-specific model needing hand-annotated data, with generalisation problems across different walls even after that investment.
 **Source(s):** Reiff (2024) [Roboflow blog] — custom object detection + custom colour classification models, both hand-annotated. Ludford, G. (2024). "Development of a climbing performance analysis tool using computer vision." The Plymouth Student Scientist 17(2) — trained a custom YOLOv7 hold-detection model on a 1717-image, 63,897-annotation dataset, achieving 87.6% mAP but requiring substantial dataset work; noted persistent issues with colour classification accuracy (72–88%) despite this investment. Maschek & Schedl (2025) — coach-annotated hold usage across only 22 videos still represented significant specialist labour.
-**Status:** implemented (see `PROPOSAL.md` §7)
+**Status:** superseded by D-017 (2026-10-04) — original reasoning (annotation cost, generalisation) stands as a historical record of why hold detection was excluded at the time; D-017 reverses this on the grounds that assisted-annotation tooling has lowered the annotation-cost premise.
+**Superseded by:** D-017
 
 ## D-010: Evaluation — qualitative now, quantitative deferred
 **Date:** 2026-07-27
@@ -173,4 +174,34 @@ LDLJ = -ln( (t2 - t1)^3 / v_peak^2  ·  ∫_{t1}^{t2} |d²v/dt²|² dt )
 **Rationale:** both routes were evaluated with actual runs against real footage (not estimated), per CLAUDE.md rule 9. Decision to not adopt either is a scope/cost call, not a finding that either route is impossible — MediaPipe-for-feet specifically remains a live, validated-as-feasible option (modulo the version pin) if foot placement is later promoted into `PROPOSAL.md` scope, most likely as an augmentation (MediaPipe feet + ViTPose body) rather than a replacement, given ViTPose's clear edge everywhere else.
 **Source(s):** direct experimentation in this project's environment, 2026-10-04 — `transformers`/`usyd-community/vitpose-plus-large` dataset_index sweep; `mediapipe` 0.10.35 Pose Landmarker ("heavy") on own footage; PyPI version check for `mmcv`/`mmpose`/`mmengine`; GitHub issue google-ai-edge/mediapipe#6356.
 **Status:** implemented (exploration complete, decision made to stay on ViTPose-L body-only). Revisit if/when foot placement or smoothness is promoted into core scope.
+
+## D-017: Hold detection — hybrid gym-specific detector + colour-matching, superseding D-009
+**Date:** 2026-10-04
+**Decision:** Reverse D-009. Add a hold-detection component: (1) a single-class object detector ("hold" vs. background) fine-tuned from a pretrained **YOLOv8n** checkpoint (picked over YOLOv11n for consistency with the YOLOv8n already in use for person-box detection, D-011 — same library, same weights-management pattern, no new dependency) on hand-annotated frames from this project's own gym, to localise hold bounding boxes against lighting, climber occlusion, and background clutter; (2) classical HSV colour-matching, applied within each detected hold's bounding box against this gym's known route-colour palette, to assign each hold to a route/grade (this gym grades by hold colour). Detection (localisation) and colour-matching (classification) are kept as separate steps rather than training a multi-class detector, since colour-matching is cheap, interpretable, and needs no per-colour training examples.
+
+**Why this reverses D-009's original reasoning:** D-009 ruled out hold detection specifically because of hand-annotation cost. That premise has changed: **Roboflow's model-assisted labelling** (auto-suggested boxes from a partially-trained model, corrected rather than drawn from scratch) meaningfully lowers the per-image labelling cost that was the actual blocker in D-009 — not the modelling difficulty, not the generalisation problem (still unresolved, see Limitation 1). Tool named explicitly here to close the follow-up this entry originally left open; no measured labelling-time figure is claimed — if/when annotation actually happens, log the real time taken as a D-017a sub-entry rather than relying on this generic claim.
+
+**Limitation 1 — gym-specific, conflicts with `PROPOSAL.md` §3's generalisability goal for this component:** a detector fine-tuned on this gym's holds will not generalise to a different wall/gym without re-annotating and retraining. Scoped specifically to this one component — pose estimation, metrics, and feedback generation remain gym-agnostic. Do not present this component as satisfying the generalisability goal in the write-up.
+
+**Limitation 2 — reintroduces model fine-tuning/training:** required a corresponding `CLAUDE.md` rule 4 update, narrowly scoped to this one detector (done in the same session as this entry — see `CLAUDE.md`). Not a blanket removal of the fine-tuning prohibition.
+
+**Colour palette — explicit placeholder, not fabricated:** this project's gym's actual route-colour palette (which hex/HSV ranges correspond to which grades) is not yet recorded anywhere in this repo. Per `CLAUDE.md` rule 9, this must come from the author's own knowledge of their gym, not be guessed — left as `GYM_COLOUR_PALETTE = None  # TBD, see DECISIONS.md D-017a` in code until supplied.
+**Rationale:** keeps the harder, label-expensive part of the problem (localisation under lighting/occlusion/clutter) to a single-class detector — an easier learning problem than the multi-class/custom-colour-classifier models reviewed in D-009 — while keeping route/grade assignment in cheap, interpretable, non-learned HSV matching. Avoids Ludford's (2024) reported colour-classification accuracy problems (72–88%), since this project's matching only needs one known gym's fixed colour set, not generalised conditions.
+**Source(s):** D-009's original citations (Reiff 2024, Ludford 2024, Maschek & Schedl 2025) remain the evidentiary basis for the generalisation/annotation-cost concerns, reweighed rather than superseded. Roboflow model-assisted labelling — no specific measured labelling-time citation logged; see D-017a follow-up.
+**Status:** proposed — author has authorized starting implementation (2026-10-04). Supervisor sign-off (`PROPOSAL.md` §9) is still outstanding and should happen before/while building, not skipped — that gate is a dissertation-process requirement this entry cannot resolve on its own.
+**Supersedes:** D-009
+
+## D-017a: Gym colour→grade mapping — partially supplied (grade bands known, HSV calibration still pending)
+**Date:** 2026-10-04
+**Decision:** Author supplied this gym's real colour→grade-band mapping directly, now encoded in `hold_colours_config.py`'s `GYM_COLOUR_GRADE_BANDS`:
+```
+green=V0, white=V0-V1, blue=V1-V3, black=V2-V4, pink=V2-V5,
+red=V3-V5, purple=V5-V7, yellow=V7-V8, orange=V8+
+```
+Several entries are grade *bands*, not single values — colour alone does not pin an exact grade at this gym. `hold_detection.py`'s output reports the band as given, never a fabricated single number narrower than this mapping actually supports.
+
+**What this does *not* resolve:** the numeric HSV ranges for each colour name remain unmeasured — "green" is a name, not an HSV range, and the actual pixel values depend on this gym's specific holds and lighting. `GYM_COLOUR_HSV_REFERENCE` in `hold_colours_config.py` stays `None` per colour until measured via `training/calibrate_hold_colours.py` against real sample photos. Until then, `hold_detection.py`'s colour-matching returns `"unassigned"` for every detection — this is working as intended, not a bug, per `CLAUDE.md` rule 9.
+**Rationale:** the grade-band mapping is a known fact the author could simply state; the HSV ranges are not a fact anyone can simply state without measuring real holds under this gym's actual lighting — conflating the two would mean fabricating the harder half of this entry.
+**Source(s):** author's direct knowledge of their own gym, supplied 2026-10-04. HSV ranges: none yet — pending `training/calibrate_hold_colours.py` measurement against real sample photos (log that measurement as an addendum to this entry once it happens, including sample-photo count per colour).
+**Status:** proposed — grade-band mapping implemented; HSV calibration outstanding, blocking real (non-"unassigned") colour-matching output.
  

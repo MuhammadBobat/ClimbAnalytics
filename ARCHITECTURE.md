@@ -23,6 +23,8 @@ Video Input → Pose Estimation → Temporal Tracking → Feature Extraction
 
 Keypoint format: standard 17-keypoint COCO convention (confirmed as the actual output of the chosen ViTPose-L checkpoint, and the only format it can produce — see D-012; do not remap unnecessarily). Joint names referenced throughout this document assume standard COCO naming (`left_hip`, `right_hip`, `left_wrist`, etc.). No foot/toe keypoints are available — see D-016.
 
+This table covers the per-frame body-tracking chain only. Hold detection (D-017) is a separate auxiliary branch off Video Input, run at a different cadence — see §8.
+
 ---
 
 ## 2. Pose estimation model — validated (qualitative) on own footage
@@ -128,10 +130,13 @@ state_classifier.py       — four-state z-score classifier (§4.4)
 behaviour_interpretation.py — thresholds → descriptors
 feedback_generator.py     — descriptors → text report
 output.py                 — video overlay, graphs, report assembly
+hold_detection.py          — fine-tuned YOLOv8n hold localiser + HSV colour-matching (§8)
 ```
 
+Training/data-prep for the hold detector is **not** a runtime pipeline module — see §8's own suggested location, kept separate from this list the same way `validation/`'s scripts are.
+
 ## 6. Explicitly out of scope for this file
-See `PROPOSAL.md` §7 — do not add hold detection, model training/fine-tuning, real-time processing, or 3D lifting to this architecture without a corresponding scope change logged there first.
+See `PROPOSAL.md` §7 — do not add model fine-tuning/training (except the single hold-detector exception in §8, D-017), real-time processing, a learned feedback generator, or 3D lifting to this architecture without a corresponding scope change logged there first. Hold detection itself is no longer out of scope — see §8.
 
 ---
 
@@ -152,3 +157,41 @@ Not part of the core pipeline (stages 1–7 in §1) — this is a separate valid
 **Suggested location:** keep this as a standalone script (e.g. `validation/known_groups_eval.py`), outside the core module boundaries in §5 — same treatment as the existing ViTPose validation script, since it's a one-off validation workflow, not a pipeline component the main system depends on at runtime.
 
 **Explicitly not part of this check:** CoM distance-to-wall (depth-axis, not measurable with a single perpendicular 2D camera — see D-015 correction).
+
+---
+
+## 8. Hold detection and route/grade assignment (D-017)
+
+Reverses D-009 — see `DECISIONS.md` D-017 for full rationale, limitations, and sources. Two-step hybrid: a fine-tuned single-class detector localises holds, then classical HSV colour-matching assigns each detected hold to a route/grade. **Does not** produce hold-relative feedback (e.g. "you hesitated at hold 4") — that needs linking the pose/metric timeline to individual holds over time, which is a separate, still out-of-scope feature (`PROPOSAL.md` §7). This section only covers *where holds are* and *which route they belong to*, as a one-off per-clip annotation, not a per-frame tracked quantity.
+
+### 8.1 Cadence — once per clip, not once per frame
+
+Holds are static and the camera is fixed and perpendicular for the duration of a clip (D-008) — unlike the climber, they don't move frame to frame. Running hold detection on every frame the way pose estimation does would be pure wasted computation. Instead: sample a small number of frames spread across the clip (exact count TBD, start with ~5–10 and adjust empirically), run the detector on each, and merge detections across those frames (cluster by IoU overlap, keep the highest-confidence box per cluster) into one hold layout for the whole clip. Sampling multiple frames rather than one is specifically to recover holds the climber's body occludes in any single frame — a real failure mode given a bouldering wall densely covered in holds and a climber moving in front of them.
+
+**Not yet validated:** the sampling count and the IoU-merge threshold are both engineering heuristics, not literature values — no literature source, validate empirically on own footage before relying on them, same honesty standard as D-007's occlusion tiers.
+
+### 8.2 Detector — single-class YOLOv8n, fine-tuned
+
+**Model:** YOLOv8n (`ultralytics`), single class (`hold`), fine-tuned from the pretrained COCO checkpoint already vendored in this repo (`validation/weights/yolov8n.pt` is the *person*-detection checkpoint — the hold detector is a **separate fine-tuned checkpoint**, not a reuse of that file; do not overwrite it).
+
+**Training data:** hand-annotated frames from this project's own gym footage (`footage/test/` clips, or dedicated still photos of the wall), annotated via Roboflow's model-assisted labelling (D-017) and exported in YOLO format. Number of images/annotations needed: TBD — start small (a few dozen frames across different lighting/angles of the same gym) and assess whether detection quality is sufficient before investing in more.
+
+**Training entry point:** `ultralytics`' own `model.train(data=..., epochs=..., ...)` API on the exported dataset — a few dozen epochs from the pretrained checkpoint is the normal starting point for fine-tuning a single-class detector on a small custom dataset; exact epoch count/hyperparameters TBD, tune empirically and log the final choice as a `DECISIONS.md` sub-entry (D-017b) once training actually happens, per CLAUDE.md rule 9 (no invented numbers).
+
+### 8.3 Colour-matching — classical HSV, not learned
+
+For each detected hold's bounding box: crop the region, compute a representative colour from the pixels inside it (e.g. median hue/saturation over an eroded central region of the box, to avoid picking up wall-colour or neighbouring-hold pixels at the edges — exact sampling method TBD, validate against real crops before finalising), then compare against this gym's known route-colour palette using HSV distance (hue is circular — use circular distance, not a flat difference) and assign the nearest-matching route, or "unassigned" if the distance exceeds a threshold.
+
+**Explicit placeholder — do not fabricate:** the actual route-colour palette for this gym (which HSV ranges correspond to which routes/grades) is not recorded anywhere in this repo yet. Per `DECISIONS.md` D-017 and `CLAUDE.md` rule 9, this must come from the author's own knowledge of their gym, not be guessed. Represent it in code as `GYM_COLOUR_PALETTE = None  # TBD, see DECISIONS.md D-017a` until supplied, and log the actual palette as D-017a once gathered. The match-distance threshold is similarly TBD, to be swept empirically rather than guessed (same spirit as D-004, though D-004 itself does not currently enumerate this threshold — log it as its own entry, D-017c, rather than silently folding it into D-004's scope).
+
+### 8.4 Data contract
+
+| Input | Output |
+|---|---|
+| A handful of sampled frames from a clip (reused from Video Input, not re-decoded) + `GYM_COLOUR_PALETTE` config | Per-clip list of `{bbox, route_label (or "unassigned"), detector_confidence, colour_distance}`, one entry per detected hold |
+
+**Where this feeds:** primarily `Output` (overlay detected holds + route colour on the annotated video, per `ARCHITECTURE.md` §1's Output stage) and, optionally, the `route grade (if known)` input already required by §7's known-groups validation — this can auto-fill that field once implemented, rather than relying on manual entry, though that wiring isn't built yet.
+
+### 8.5 Suggested location
+
+Runtime inference (`hold_detection.py`) is a core module per §5. Training/data-prep (annotation export handling, the `model.train(...)` call, checkpoint management) is **not** a runtime pipeline component — keep it as a one-off script (e.g. `training/train_hold_detector.py`), analogous to how `validation/`'s scripts sit outside the core module boundaries. Do not import training code from `hold_detection.py` or vice versa.
