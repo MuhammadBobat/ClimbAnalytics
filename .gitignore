@@ -231,6 +231,13 @@ training/colour_samples/
 hold_detection_weights/
 hold_detection_output/
 
+# Exploratory spike (experiments/blazepose_z_spike) - isolated venv, model
+# weights, and generated outputs only; the spike's own source files are not
+# ignored.
+experiments/blazepose_z_spike/.venv/
+experiments/blazepose_z_spike/models/
+experiments/blazepose_z_spike/output/
+
 # macOS
 .DS_Store
 

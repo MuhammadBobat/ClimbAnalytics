@@ -23,7 +23,7 @@ Video Input → Pose Estimation → Temporal Tracking → Feature Extraction
 
 Keypoint format: standard 17-keypoint COCO convention (confirmed as the actual output of the chosen ViTPose-L checkpoint, and the only format it can produce — see D-012; do not remap unnecessarily). Joint names referenced throughout this document assume standard COCO naming (`left_hip`, `right_hip`, `left_wrist`, etc.). No foot/toe keypoints are available — see D-016.
 
-This table covers the per-frame body-tracking chain only. Hold detection (D-017) is a separate auxiliary branch off Video Input, run at a different cadence — see §8.
+This table covers the per-frame body-tracking chain only. Hold detection (D-017) is a separate auxiliary branch off Video Input, run at a different cadence — see §8. The contact timeline and hold-to-hold segmentation (D-018) join the body-tracking chain to the hold layout between Feature Extraction and Behaviour Interpretation — see §8.6.
 
 ---
 
@@ -131,12 +131,13 @@ behaviour_interpretation.py — thresholds → descriptors
 feedback_generator.py     — descriptors → text report
 output.py                 — video overlay, graphs, report assembly
 hold_detection.py          — fine-tuned YOLOv8n hold localiser + HSV colour-matching (§8)
+hold_contact.py            — keypoint-to-hold contact timeline, hold-to-hold segmentation, route definition/progress (§8.6–8.7, D-018, D-019); blocked until Phase 4 and the hold detector are done
 ```
 
 Training/data-prep for the hold detector is **not** a runtime pipeline module — see §8's own suggested location, kept separate from this list the same way `validation/`'s scripts are.
 
 ## 6. Explicitly out of scope for this file
-See `PROPOSAL.md` §7 — do not add model fine-tuning/training (except the single hold-detector exception in §8, D-017), real-time processing, a learned feedback generator, or 3D lifting to this architecture without a corresponding scope change logged there first. Hold detection itself is no longer out of scope — see §8.
+See `PROPOSAL.md` §7 — do not add model fine-tuning/training (except the single hold-detector exception in §8, D-017), real-time processing, a learned feedback generator, or 3D lifting to this architecture without a corresponding scope change logged there first. Hold detection, and the hold-relative layer built on it (§8.6–8.7), are no longer out of scope — see §8. Distance-to-wall (any depth quantity) remains out of scope; per-move comparison (§8.8) is a stretch feature.
 
 ---
 
@@ -162,7 +163,7 @@ Not part of the core pipeline (stages 1–7 in §1) — this is a separate valid
 
 ## 8. Hold detection and route/grade assignment (D-017)
 
-Reverses D-009 — see `DECISIONS.md` D-017 for full rationale, limitations, and sources. Two-step hybrid: a fine-tuned single-class detector localises holds, then classical HSV colour-matching assigns each detected hold to a route/grade. **Does not** produce hold-relative feedback (e.g. "you hesitated at hold 4") — that needs linking the pose/metric timeline to individual holds over time, which is a separate, still out-of-scope feature (`PROPOSAL.md` §7). This section only covers *where holds are* and *which route they belong to*, as a one-off per-clip annotation, not a per-frame tracked quantity.
+Reverses D-009 — see `DECISIONS.md` D-017 for full rationale, limitations, and sources. Two-step hybrid: a fine-tuned single-class detector localises holds, then classical HSV colour-matching assigns each detected hold to a route/grade. By itself this stage does **not** produce hold-relative feedback (e.g. "you hesitated at hold 4") — linking the pose/metric timeline to individual holds is the separate contact-timeline layer in §8.6 (D-018, in scope since 2026-10-07, build blocked on its dependencies). This section covers *where holds are* and *which route they belong to*, as a one-off per-clip annotation, not a per-frame tracked quantity.
 
 ### 8.1 Cadence — once per clip, not once per frame
 
@@ -195,3 +196,22 @@ For each detected hold's bounding box: crop the region, compute a representative
 ### 8.5 Suggested location
 
 Runtime inference (`hold_detection.py`) is a core module per §5. Training/data-prep (annotation export handling, the `model.train(...)` call, checkpoint management) is **not** a runtime pipeline component — keep it as a one-off script (e.g. `training/train_hold_detector.py`), analogous to how `validation/`'s scripts sit outside the core module boundaries. Do not import training code from `hold_detection.py` or vice versa.
+
+### 8.6 Contact timeline and hold-to-hold segmentation (D-018)
+
+| Input | Output |
+|---|---|
+| Per-joint time-series with a provenance flag per frame (observed / interpolated tier 1–2 / stale tier 3, §3), four-state labels (§4.4), per-clip hold layout (§8.4) | Touch events `{hold_id, limb, start_frame, end_frame, route_label}`; per-clip share of the timeline that rests on observed or short-gap keypoints |
+
+- A contact is decided by a wrist or ankle keypoint falling in, or within a small margin of, a hold box (margin TBD, empirical). Contacts that depend on **stale (tier-3) keypoints are recorded as unknown, never guessed.** ViTPose-L gives no fingertip/toe keypoints (D-012, D-016), so wrist/ankle proximity is a coarse contact signal — measure its accuracy on own footage before trusting anything built on it.
+- **Segmentation:** the climb is cut into intervals between successive contact events. Existing metrics (CoM velocity and displacement, four-state fractions, LDLJ from §4.5) are computed per segment as well as per clip. **LDLJ is reported only above a minimum segment duration (TBD, swept per D-004)**, and dynamic segments are reported as such, because its reading is not equivalent between static and ballistic moves.
+- **Derived measures (no new model):** climb time = first to last contact; pace = contact events per second; pre-climb pause = first frame with a detected climber to first contact; dwell = contact duration per hold; flight time = gap between a limb's release and its next contact; foot usage ratio = share of contact events made by ankles; foot readjustment = same-ankle release and re-contact on the same hold within a window (TBD); balance proxy = horizontal offset of the CoM from the centre of the supporting contact points (normalisation TBD). The last two have no literature source — validate empirically.
+- **Hold-ID stability risk:** IDs come from the §8.1 sampled-frame IoU merge; if that merge is noisy the per-hold timeline is too. Validate before relying on it.
+
+### 8.7 Route definition and progress (D-019)
+
+Route membership = holds whose colour-matched label equals the route the climber touches, spatially clustered, taking the cluster the climber contacts (assumes same-colour problems do not overlap on this wall — to validate). Start holds = the first one or two holds the climber touches (one if both hands share a hold). Finish hold = the topmost hold of the route cluster, assuming completion. Progress = holds touched and furthest hold reached; a failed attempt is reported as progress short of the finish. The gym's small silver round start/finish tags are not relied on. Ordering for "furthest hold" by height fails on traverses (rule TBD). Missed holds shorten the route and overstate progress.
+
+### 8.8 Per-move attempt comparison — stretch (D-020)
+
+Not part of the core pipeline. Within a clip, hold identity comes from §8.1. Across sessions, detected hold layouts are matched (colour-constrained, robust fit) to estimate a plane homography and hold correspondence; this is the proposed resolution of D-013, with manual four-corner points as the fallback. Time-based, four-state-fraction and dimensionless measures (LDLJ, path length over straight-line distance between holds) compare across sessions without calibration; pixel-valued displacement and velocity do not. The homography is exact only for points on the wall plane — climber keypoints are warped approximately. Feedback wording stays comparative (D-010, D-015).

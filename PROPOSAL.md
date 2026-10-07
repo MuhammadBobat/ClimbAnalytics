@@ -33,7 +33,8 @@ Original proposal goals, plus amendments made during pre-term planning (each ame
 - Rule-based, metric-driven natural language feedback. *(original — explicitly NOT a learned/LLM-based generator)*
 - Qualitative evaluation on real bouldering footage. *(original, see §7 for evaluation status)*
 - Generalisable architecture, in principle transferable to other dynamic sports. *(original)*
-- **Hold detection and route/grade assignment** via a hybrid approach: a single-class object detector (fine-tuned YOLOv8n) to localise holds, combined with classical HSV colour-matching within each detected hold to assign route/grade membership (this gym grades by hold colour). *(amendment, reverses D-009 — see `DECISIONS.md` D-017. Build has started; supervisor sign-off is still pending, see §9. Gym-specific, does not generalise without retraining — tension with this section's own generalisability goal, see D-017 Limitation 1. Reintroduces model fine-tuning, see `CLAUDE.md` rule 4, updated accordingly.)*
+- **Hold detection and route/grade assignment** via a hybrid approach: a single-class object detector (fine-tuned YOLOv8n) to localise holds, combined with classical HSV colour-matching within each detected hold to assign route/grade membership (this gym grades by hold colour). *(amendment, reverses D-009 — see `DECISIONS.md` D-017. Build has started; supervisor sign-off waived by the author's executive decision, see §9. Gym-specific, does not generalise without retraining — tension with this section's own generalisability goal, see D-017 Limitation 1. Reintroduces model fine-tuning, see `CLAUDE.md` rule 4, updated accordingly.)*
+- **Hold-relative analysis** built on hold detection *(amendment, 2026-10-07 — `DECISIONS.md` D-018, D-019; build blocked until the four-state classifier and the hold detector are done)*: a keypoint-to-hold contact timeline; hold-to-hold segmentation of the existing metrics (CoM, velocity, four-state, LDLJ per move); timing metrics derived from the timeline (climb time, pace, pre-climb pause, dwell per hold, flight time); foot usage ratio and foot readjustments; a balance proxy; automatic route definition and route progress (no manual start/finish marking). Hold-anchored feedback is built on these. Foot readjustment and the balance proxy have no literature source and are validated empirically only.
 
 ## 4. Assumptions (load-bearing — do not violate without a logged decision)
 
@@ -49,22 +50,25 @@ Original proposal goals, plus amendments made during pre-term planning (each ame
 - Four-state motion classification (Boulanger-derived) — supersedes the standalone static-to-dynamic ratio (see §3 above)
 - Movement smoothness via Log Dimensionless Jerk (LDLJ)
 - Whole-body centre of mass (CoM) as the primary performance-tracking quantity (justification in `DECISIONS.md`)
+- **Hold-relative metrics (D-018, D-019):** all of the above computed per hold-to-hold segment as well as per clip, plus the timing, foot-usage, balance-proxy and route-progress measures listed in §3. Contingent on hold detection and the contact timeline.
 
 **No standalone static-to-dynamic ratio metric exists in this design.** If a single summary number is wanted for a report, derive it from the four-state timeline rather than computing it independently.
 
 ## 6. Scope: nice-to-have / deferred (do NOT build unless explicitly promoted to core scope in this file)
 
 - **Time-spent heatmap** derived from keypoint dwell time (reuses existing keypoint data, no new model needed — genuinely low-cost, but not core deliverable until this section says so).
-- **Attempt-to-attempt comparison**, whole-climb summary level only (deltas between two runs' aggregate metrics, fed into feedback generator). Localised/hold-by-hold comparison (would need DTW temporal alignment and/or hold detection) is explicitly **not** planned — see §7 out-of-scope.
+- **Attempt-to-attempt comparison, per move by hold sequence — stretch goal** (D-020; replaces the earlier whole-climb-only version). Two attempts are aligned by hold identity (no DTW needed), compared move by move, with whole-climb aggregate deltas as the summary line, and fed into the feedback generator. Needs cross-session hold alignment (layout matching / homography, D-013, D-020). Nothing in the core pipeline depends on it.
+- **Spoken/verbal feedback output**: piping the generated text report through an off-the-shelf text-to-speech API. Trivial to add once the text report exists (no new model or metric needed) — a presentation-layer addition, not a research contribution. Not core scope until promoted here.
 - Quantitative pose-accuracy evaluation (see §7).
 
 ## 7. Explicit scope boundaries — OUT OF SCOPE
 
 - **Model fine-tuning / training**, except the single-class hold detector in §3 (`DECISIONS.md` D-017). Pose models remain pretrained-only.
-- **Hold-relative feedback** (e.g. "you hesitated at hold 4"), and any other feature that requires linking pose/metric data to *individual* holds over time. Not achievable from hold localisation + colour/route assignment alone (§3) — that only gives static hold positions and route membership, not a hold-interaction timeline. Remains out of scope; do not assume §3's hold detection amendment covers this too.
+- **Distance-to-wall / any depth (z) quantity.** Not measurable with a single perpendicular 2D camera (D-008, D-015). Hold detection and per-move comparison do not replace it. A 2.5D route (e.g. BlazePose root-relative z) is unproven for this use and only an optional exploratory spike, not a goal. The spike ran (`DECISIONS.md` D-021) and was inconclusive — no ground truth was available — so this stays out of scope.
+- **Hold-relative feedback is no longer out of scope** (D-018, 2026-10-07) — see §3. It remains blocked until its dependencies exist; do not build it ahead of the four-state classifier and the hold detector.
 - **Real-time or mobile deployment.**
 - **Learned/LLM-based feedback generation.** Feedback stays rule-based and metric-driven.
-- **Localised (hold-by-hold or DTW-aligned) attempt comparison** — see §6.
+- **DTW-aligned attempt comparison.** Per-move comparison by hold sequence is a stretch goal instead (§6, D-020).
 - **3D pose lifting** (e.g. MotionBERT, MeTRAbs). This project uses 2D pose estimation only; a 3D lifting stage is a different pipeline component and is not required by any current goal.
 
 ## 8. Evaluation status
@@ -74,6 +78,5 @@ Original proposal goals, plus amendments made during pre-term planning (each ame
 
 ## 9. Open questions to raise with supervisor
 
-- Clarify what specifically prompted the "manual labelling" comment (quantitative pose evaluation? hold detection? learned classifier? human-rated climb comparison for validation?) — see `DECISIONS.md` entry D-001.
-- Sign-off on adding the four-state classifier, heatmap, and whole-climb comparison to the formal proposal document.
-- **Hold detection reverses D-009 — raise before/while building, not retroactively.** `DECISIONS.md` D-017 proposes a hybrid gym-specific detector + colour-matching approach, superseding D-009's "confirmed out of scope" decision; implementation has started. It reintroduces model fine-tuning (`CLAUDE.md` rule 4 updated to carve out this one exception) and creates a gym-specific component in tension with §3's generalisability goal. Do not treat D-009's reversal as final until this conversation happens.
+- Sign-off on adding the four-state classifier, heatmap, and per-move attempt comparison to the formal proposal document. The hold-relative metrics (D-018, D-019) also go beyond the submitted PDF.
+- **Hold detection reverses D-009.** `DECISIONS.md` D-017 proposes a hybrid gym-specific detector + colour-matching approach, superseding D-009's "confirmed out of scope" decision; implementation has started. It reintroduces model fine-tuning (`CLAUDE.md` rule 4 updated to carve out this one exception) and creates a gym-specific component in tension with §3's generalisability goal. **Update (2026-10-04):** this was previously flagged as needing supervisor sign-off before/while building. The author has made an explicit executive decision to proceed without it — scope calls in this area are the author's own to make. Left here as a record of the tension (fine-tuning exception, generalisability goal), not as an open item blocking anything.
