@@ -23,6 +23,13 @@ detection's segmentation mask (eroded by a small, unvalidated pixel margin --
 see DEFAULT_MASK_ERODE_PX), not from a bounding box. "descent_hold" and
 "volume" detections are never colour-matched and never get a route label.
 
+Every detection, regardless of class, records its full-mask and
+post-erosion pixel counts (compute_mask_pixel_counts()) -- written to the
+per-clip CSV and summarised (min/median per class) in the console output.
+No "too few pixels" cutoff is applied anywhere: that threshold is a 0.5.5
+calibration decision against real pixel-count data, not something to guess
+now (see DECISIONS.md D-022's 2026-10-21 pixel-count-tracking addendum).
+
 Colour-matching uses hold_colours_config.py's GYM_COLOUR_HSV_REFERENCE, which
 is a placeholder (all None) until calibrated via
 training/calibrate_hold_colours.py -- until then, every detected hold comes
@@ -33,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import statistics
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +73,8 @@ class HoldDetection:
     colour_name: str | None
     detector_confidence: float
     colour_distance: float | None
+    mask_pixel_count: int = 0  # pixels in the full polygon mask, every class (not just "hold")
+    eroded_mask_pixel_count: int = 0  # pixels remaining after DEFAULT_MASK_ERODE_PX erosion; 0 if emptied
     used_mask_erosion_fallback: bool = False  # True if erosion emptied the mask and the un-eroded mask was used instead
 
 
@@ -184,6 +194,32 @@ def _polygon_mask(frame_shape: tuple[int, int], polygon_xy: list[tuple[float, fl
     return mask.astype(bool)
 
 
+def compute_mask_pixel_counts(
+    frame_shape: tuple[int, int],
+    polygon_xy: list[tuple[float, float]],
+    erode_px: int = DEFAULT_MASK_ERODE_PX,
+) -> tuple[int, int, bool, np.ndarray, np.ndarray]:
+    """Returns (mask_pixel_count, eroded_pixel_count, used_fallback, mask, sample_mask).
+
+    Computed for EVERY detection, all three classes (D-022 pixel-count
+    tracking addendum) -- not just "hold" -- so mask-size data exists even
+    before any colour matching happens. No "too few pixels" cutoff is
+    applied here or anywhere downstream: that threshold is a 0.5.5
+    calibration decision against real data, not something to guess now.
+    """
+    mask = _polygon_mask(frame_shape, polygon_xy)
+    mask_pixel_count = int(mask.sum())
+    if mask_pixel_count == 0:
+        return 0, 0, False, mask, mask
+
+    kernel = np.ones((max(1, erode_px * 2 + 1),) * 2, dtype=np.uint8)
+    eroded = cv2.erode(mask.astype(np.uint8), kernel, iterations=1).astype(bool)
+    eroded_pixel_count = int(eroded.sum())
+    used_fallback = eroded_pixel_count == 0
+    sample_mask = mask if used_fallback else eroded
+    return mask_pixel_count, eroded_pixel_count, used_fallback, mask, sample_mask
+
+
 def match_colour(
     frame_bgr: np.ndarray,
     polygon_xy: list[tuple[float, float]],
@@ -191,10 +227,13 @@ def match_colour(
     grade_bands: dict,
     distance_threshold: float,
     erode_px: int = DEFAULT_MASK_ERODE_PX,
-) -> tuple[str, str | None, float | None, bool]:
-    """Returns (route_label, colour_name, distance, used_fallback).
-    "unassigned" whenever hsv_reference has no real (non-None) entries --
-    see hold_colours_config.py.
+) -> tuple[str, str | None, float | None, bool, int, int]:
+    """Returns (route_label, colour_name, distance, used_fallback,
+    mask_pixel_count, eroded_mask_pixel_count). "unassigned" whenever
+    hsv_reference has no real (non-None) entries -- see
+    hold_colours_config.py -- but the pixel counts are still computed and
+    returned even then, since they describe the mask/detection itself, not
+    the colour-matching outcome.
 
     Samples the representative colour from inside the polygon MASK (D-022),
     eroded by erode_px to avoid edge/background bleed -- falls back to the
@@ -203,18 +242,15 @@ def match_colour(
     can empty a small hold's mask entirely; the caller is expected to count
     and report used_fallback, not swallow it.
     """
+    mask_pixel_count, eroded_pixel_count, used_fallback, mask, sample_mask = compute_mask_pixel_counts(
+        frame_bgr.shape, polygon_xy, erode_px
+    )
+    if mask_pixel_count == 0:
+        return "unassigned", None, None, False, 0, 0
+
     known = {c: v for c, v in hsv_reference.items() if v is not None}
     if not known:
-        return "unassigned", None, None, False
-
-    mask = _polygon_mask(frame_bgr.shape, polygon_xy)
-    if not mask.any():
-        return "unassigned", None, None, False
-
-    kernel = np.ones((max(1, erode_px * 2 + 1),) * 2, dtype=np.uint8)
-    eroded = cv2.erode(mask.astype(np.uint8), kernel, iterations=1).astype(bool)
-    used_fallback = not eroded.any()
-    sample_mask = mask if used_fallback else eroded
+        return "unassigned", None, None, used_fallback, mask_pixel_count, eroded_pixel_count
 
     pixels = frame_bgr[sample_mask]
     hsv_pixels = cv2.cvtColor(pixels.reshape(1, -1, 3), cv2.COLOR_BGR2HSV).reshape(-1, 3)
@@ -230,8 +266,11 @@ def match_colour(
             best_colour, best_dist = colour, dist
 
     if best_colour is None or best_dist > distance_threshold:
-        return "unassigned", None, (best_dist if best_colour else None), used_fallback
-    return grade_bands.get(best_colour, "unassigned"), best_colour, best_dist, used_fallback
+        return "unassigned", None, (best_dist if best_colour else None), used_fallback, mask_pixel_count, eroded_pixel_count
+    return (
+        grade_bands.get(best_colour, "unassigned"), best_colour, best_dist, used_fallback,
+        mask_pixel_count, eroded_pixel_count,
+    )
 
 
 def process_clip(
@@ -259,7 +298,7 @@ def process_clip(
 
         if class_name == "hold":
             n_holds += 1
-            route_label, colour_name, distance, used_fallback = match_colour(
+            route_label, colour_name, distance, used_fallback, mask_px, eroded_px = match_colour(
                 representative_frame, polygon_xy, GYM_COLOUR_HSV_REFERENCE,
                 GYM_COLOUR_GRADE_BANDS, args.colour_distance_threshold,
             )
@@ -267,8 +306,14 @@ def process_clip(
                 n_fallback += 1
         else:
             # D-022: descent_hold and volume are never colour-matched and
-            # never get a route label -- no HSV call at all for these.
-            route_label, colour_name, distance, used_fallback = "unassigned", None, None, False
+            # never get a route label -- no HSV call at all for these. Mask
+            # pixel counts are still recorded for every class, though (see
+            # the 2026-10-21 pixel-count-tracking addendum to D-022) -- mask
+            # size is a property of the detection, not of colour-matching.
+            route_label, colour_name, distance = "unassigned", None, None
+            mask_px, eroded_px, used_fallback, _, _ = compute_mask_pixel_counts(
+                representative_frame.shape, polygon_xy
+            )
 
         detections.append(
             HoldDetection(
@@ -279,6 +324,8 @@ def process_clip(
                 colour_name=colour_name,
                 detector_confidence=conf,
                 colour_distance=distance,
+                mask_pixel_count=mask_px,
+                eroded_mask_pixel_count=eroded_px,
                 used_mask_erosion_fallback=used_fallback,
             )
         )
@@ -290,7 +337,28 @@ def process_clip(
             f"({DEFAULT_MASK_ERODE_PX}px) may be too large for this gym's smaller holds."
         )
 
+    print_mask_pixel_count_summary(detections)
+
     return detections, representative_frame
+
+
+def print_mask_pixel_count_summary(detections: list[HoldDetection]) -> None:
+    """Per-class min/median mask and eroded-mask pixel counts -- not just
+    the fallback count. No 'too few pixels' cutoff is applied or suggested
+    here; that threshold is a 0.5.5 calibration decision against real data
+    (D-022 pixel-count-tracking addendum, 2026-10-21)."""
+    by_class: dict[str, list[HoldDetection]] = {}
+    for det in detections:
+        by_class.setdefault(det.class_name, []).append(det)
+
+    for class_name, dets in sorted(by_class.items()):
+        mask_counts = [d.mask_pixel_count for d in dets]
+        eroded_counts = [d.eroded_mask_pixel_count for d in dets]
+        print(
+            f"  class={class_name}: n={len(dets)}, "
+            f"mask_px min/median={min(mask_counts)}/{statistics.median(mask_counts):.0f}, "
+            f"eroded_px min/median={min(eroded_counts)}/{statistics.median(eroded_counts):.0f}"
+        )
 
 
 _CLASS_DRAW_COLOURS = {
@@ -364,6 +432,7 @@ def main():
             writer.writerow([
                 "video", "class", "bbox_x", "bbox_y", "bbox_w", "bbox_h",
                 "route_label", "colour_name", "detector_confidence", "colour_distance",
+                "mask_pixel_count", "eroded_mask_pixel_count", "used_mask_erosion_fallback",
             ])
             for det in detections:
                 writer.writerow([
@@ -371,6 +440,7 @@ def main():
                     det.route_label, det.colour_name or "",
                     f"{det.detector_confidence:.4f}",
                     f"{det.colour_distance:.2f}" if det.colour_distance is not None else "",
+                    det.mask_pixel_count, det.eroded_mask_pixel_count, det.used_mask_erosion_fallback,
                 ])
 
         if representative_frame is not None:
