@@ -5,8 +5,9 @@ Roboflow. See DECISIONS.md D-017 ("Human steps") and ARCHITECTURE.md §8.2.
 Runnable now -- has no dependency on the hold detector, training data, or
 anything else that doesn't exist yet. This is step 1 of the human annotation
 workflow: run this, upload the resulting .jpg files to a Roboflow project,
-annotate (model-assisted after the first few boxes), export as a YOLO-format
-dataset into training/dataset/, then run train_hold_detector.py.
+annotate using Roboflow's Smart Select (polygon annotation, D-022), export
+as a YOLO-format dataset into training/dataset/, then run
+train_hold_detector.py.
 
 Usage:
     python training/extract_annotation_frames.py
@@ -73,8 +74,10 @@ def main():
         total += n
 
     print(f"\nTotal: {total} frames in {args.output_dir}")
-    print("Next: upload these to a Roboflow project, annotate the 'hold' class, "
-          "export as YOLOv8 format into training/dataset/, then run train_hold_detector.py.")
+    print("Next: upload these to a Roboflow project, annotate the three classes "
+          "('hold', 'descent_hold', 'volume' -- D-022) using Smart Select, "
+          "export as YOLOv8 segmentation format into training/dataset/, "
+          "then run train_hold_detector.py.")
 
 
 if __name__ == "__main__":
