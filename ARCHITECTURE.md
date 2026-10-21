@@ -130,7 +130,7 @@ state_classifier.py       — four-state z-score classifier (§4.4)
 behaviour_interpretation.py — thresholds → descriptors
 feedback_generator.py     — descriptors → text report
 output.py                 — video overlay, graphs, report assembly
-hold_detection.py          — fine-tuned YOLOv8n hold localiser + HSV colour-matching (§8)
+hold_detection.py          — fine-tuned YOLOv8n-seg hold localiser (segmentation, three classes, D-022) + mask-based HSV colour-matching (§8)
 hold_contact.py            — keypoint-to-hold contact timeline, hold-to-hold segmentation, route definition/progress (§8.6–8.7, D-018, D-019); blocked until Phase 4 and the hold detector are done
 ```
 
@@ -161,27 +161,32 @@ Not part of the core pipeline (stages 1–7 in §1) — this is a separate valid
 
 ---
 
-## 8. Hold detection and route/grade assignment (D-017)
+## 8. Hold detection and route/grade assignment (D-017, D-022)
 
-Reverses D-009 — see `DECISIONS.md` D-017 for full rationale, limitations, and sources. Two-step hybrid: a fine-tuned single-class detector localises holds, then classical HSV colour-matching assigns each detected hold to a route/grade. By itself this stage does **not** produce hold-relative feedback (e.g. "you hesitated at hold 4") — linking the pose/metric timeline to individual holds is the separate contact-timeline layer in §8.6 (D-018, in scope since 2026-10-07, build blocked on its dependencies). This section covers *where holds are* and *which route they belong to*, as a one-off per-clip annotation, not a per-frame tracked quantity.
+Reverses D-009 — see `DECISIONS.md` D-017 for full rationale, limitations, and sources; see D-022 for the segmentation/three-class change described below. Two-step hybrid: a fine-tuned three-class segmentation detector localises holds, then classical HSV colour-matching assigns each detected hold to a route/grade. By itself this stage does **not** produce hold-relative feedback (e.g. "you hesitated at hold 4") — linking the pose/metric timeline to individual holds is the separate contact-timeline layer in §8.6 (D-018, in scope since 2026-10-07, build blocked on its dependencies). This section covers *where holds are* and *which route they belong to*, as a one-off per-clip annotation, not a per-frame tracked quantity.
 
 ### 8.1 Cadence — once per clip, not once per frame
 
-Holds are static and the camera is fixed and perpendicular for the duration of a clip (D-008) — unlike the climber, they don't move frame to frame. Running hold detection on every frame the way pose estimation does would be pure wasted computation. Instead: sample a small number of frames spread across the clip (exact count TBD, start with ~5–10 and adjust empirically), run the detector on each, and merge detections across those frames (cluster by IoU overlap, keep the highest-confidence box per cluster) into one hold layout for the whole clip. Sampling multiple frames rather than one is specifically to recover holds the climber's body occludes in any single frame — a real failure mode given a bouldering wall densely covered in holds and a climber moving in front of them.
+Holds are static and the camera is fixed and perpendicular for the duration of a clip (D-008) — unlike the climber, they don't move frame to frame. Running hold detection on every frame the way pose estimation does would be pure wasted computation. Instead: sample a small number of frames spread across the clip (exact count TBD, start with ~5–10 and adjust empirically), run the detector on each, and merge detections across those frames (cluster by IoU overlap on each detection's mask-derived bounding box, D-022, keep the highest-confidence mask per cluster) into one hold layout for the whole clip. Sampling multiple frames rather than one is specifically to recover holds the climber's body occludes in any single frame — a real failure mode given a bouldering wall densely covered in holds and a climber moving in front of them.
 
 **Not yet validated:** the sampling count and the IoU-merge threshold are both engineering heuristics, not literature values — no literature source, validate empirically on own footage before relying on them, same honesty standard as D-007's occlusion tiers.
 
-### 8.2 Detector — single-class YOLOv8n, fine-tuned
+### 8.2 Detector — YOLOv8n-seg instance segmentation, three classes (D-022)
 
-**Model:** YOLOv8n (`ultralytics`), single class (`hold`), fine-tuned from the pretrained COCO checkpoint already vendored in this repo (`validation/weights/yolov8n.pt` is the *person*-detection checkpoint — the hold detector is a **separate fine-tuned checkpoint**, not a reuse of that file; do not overwrite it).
+**Model:** YOLOv8n-seg (`ultralytics`), fine-tuned from the pretrained COCO checkpoint already vendored in this repo (`validation/weights/yolov8n.pt` is the *person*-detection checkpoint — the hold detector is a **separate fine-tuned checkpoint**, not a reuse of that file; do not overwrite it), with **three classes**:
+- `hold` — every real hold, including coloured volumes and holds mounted on volumes.
+- `descent_hold` — red-arrow-marked downclimbing-only holds; ignored in analytics.
+- `volume` — grey, always-on wall volumes; never a route member or finish hold.
 
-**Training data:** hand-annotated frames from this project's own gym footage (`footage/test/` clips, or dedicated still photos of the wall), annotated via Roboflow's model-assisted labelling (D-017) and exported in YOLO format. Number of images/annotations needed: TBD — start small (a few dozen frames across different lighting/angles of the same gym) and assess whether detection quality is sufficient before investing in more.
+Class index order is whatever the Roboflow export's `data.yaml` says — read it at train/inference time, never assumed or hardcoded (see `training/check_seg_labels.py`).
 
-**Training entry point:** `ultralytics`' own `model.train(data=..., epochs=..., ...)` API on the exported dataset — a few dozen epochs from the pretrained checkpoint is the normal starting point for fine-tuning a single-class detector on a small custom dataset; exact epoch count/hyperparameters TBD, tune empirically and log the final choice as a `DECISIONS.md` sub-entry (D-017b) once training actually happens, per CLAUDE.md rule 9 (no invented numbers).
+**Training data:** polygon-annotated frames from this project's own gym footage (`footage/test/` clips, or dedicated still photos of the wall), annotated in Roboflow using Smart Select (model-assisted polygon annotation, D-017) and exported in YOLO **segmentation** format (polygon labels, not boxes — a box-type line in the export is a data error, see `training/check_seg_labels.py`). Number of images/annotations needed: TBD — start small (a few dozen frames across different lighting/angles of the same gym) and assess whether detection quality is sufficient before investing in more.
+
+**Training entry point:** `ultralytics`' own `model.train(data=..., epochs=..., ...)` API on the exported dataset — a few dozen epochs from the pretrained checkpoint is the normal starting point for fine-tuning a small custom segmentation model; exact epoch count/hyperparameters TBD, tune empirically and log the final choice as a `DECISIONS.md` sub-entry (D-017b) once training actually happens, per CLAUDE.md rule 9 (no invented numbers). No accuracy/mAP figure exists yet for this model — see D-022's open questions.
 
 ### 8.3 Colour-matching — classical HSV, not learned
 
-For each detected hold's bounding box: crop the region, compute a representative colour from the pixels inside it (e.g. median hue/saturation over an eroded central region of the box, to avoid picking up wall-colour or neighbouring-hold pixels at the edges — exact sampling method TBD, validate against real crops before finalising), then compare against this gym's known route-colour palette using HSV distance (hue is circular — use circular distance, not a flat difference) and assign the nearest-matching route, or "unassigned" if the distance exceeds a threshold.
+For each detected `hold` (D-022; `descent_hold` and `volume` are not colour-matched to a route): crop the region and compute a representative colour from the pixels **inside the segmentation mask only**, not the bounding box (D-022 — a box would include background and, for irregular holds, neighbouring-hold pixels; an eroded central region of the mask is a reasonable starting sample, exact sampling method still TBD, validate against real crops before finalising), then compare against this gym's known route-colour palette using HSV distance (hue is circular — use circular distance, not a flat difference) and assign the nearest-matching route, or "unassigned" if the distance exceeds a threshold.
 
 **Explicit placeholder — do not fabricate:** the actual route-colour palette for this gym (which HSV ranges correspond to which routes/grades) is not recorded anywhere in this repo yet. Per `DECISIONS.md` D-017 and `CLAUDE.md` rule 9, this must come from the author's own knowledge of their gym, not be guessed. Represent it in code as `GYM_COLOUR_PALETTE = None  # TBD, see DECISIONS.md D-017a` until supplied, and log the actual palette as D-017a once gathered. The match-distance threshold is similarly TBD, to be swept empirically rather than guessed (same spirit as D-004, though D-004 itself does not currently enumerate this threshold — log it as its own entry, D-017c, rather than silently folding it into D-004's scope).
 
@@ -189,7 +194,7 @@ For each detected hold's bounding box: crop the region, compute a representative
 
 | Input | Output |
 |---|---|
-| A handful of sampled frames from a clip (reused from Video Input, not re-decoded) + `GYM_COLOUR_PALETTE` config | Per-clip list of `{bbox, route_label (or "unassigned"), detector_confidence, colour_distance}`, one entry per detected hold |
+| A handful of sampled frames from a clip (reused from Video Input, not re-decoded) + `GYM_COLOUR_PALETTE` config | Per-clip list of `{class ("hold"/"descent_hold"/"volume"), mask (polygon), bbox (derived from the mask's bounding rectangle, D-022), route_label (or "unassigned"; "volume"/"descent_hold" are never route members), detector_confidence, colour_distance}`, one entry per detected hold |
 
 **Where this feeds:** primarily `Output` (overlay detected holds + route colour on the annotated video, per `ARCHITECTURE.md` §1's Output stage) and, optionally, the `route grade (if known)` input already required by §7's known-groups validation — this can auto-fill that field once implemented, rather than relying on manual entry, though that wiring isn't built yet.
 
@@ -208,9 +213,9 @@ Runtime inference (`hold_detection.py`) is a core module per §5. Training/data-
 - **Derived measures (no new model):** climb time = first to last contact; pace = contact events per second; pre-climb pause = first frame with a detected climber to first contact; dwell = contact duration per hold; flight time = gap between a limb's release and its next contact; foot usage ratio = share of contact events made by ankles; foot readjustment = same-ankle release and re-contact on the same hold within a window (TBD); balance proxy = horizontal offset of the CoM from the centre of the supporting contact points (normalisation TBD). The last two have no literature source — validate empirically.
 - **Hold-ID stability risk:** IDs come from the §8.1 sampled-frame IoU merge; if that merge is noisy the per-hold timeline is too. Validate before relying on it.
 
-### 8.7 Route definition and progress (D-019)
+### 8.7 Route definition and progress (D-019, updated 2026-10-21 for the three-class detector — D-022)
 
-Route membership = holds whose colour-matched label equals the route the climber touches, spatially clustered, taking the cluster the climber contacts (assumes same-colour problems do not overlap on this wall — to validate). Start holds = the first one or two holds the climber touches (one if both hands share a hold). Finish hold = the topmost hold of the route cluster, assuming completion. Progress = holds touched and furthest hold reached; a failed attempt is reported as progress short of the finish. The gym's small silver round start/finish tags are not relied on. Ordering for "furthest hold" by height fails on traverses (rule TBD). Missed holds shorten the route and overstate progress.
+Route membership = `hold`-class objects (D-022) whose colour-matched label equals the route the climber touches, spatially clustered, taking the cluster the climber contacts (assumes same-colour problems do not overlap on this wall — to validate). `volume` and `descent_hold` objects are excluded from route membership entirely and are never the finish hold; `descent_hold` is ignored in analytics altogether. Start holds = the first one or two holds the climber's **hands** touch (one if both hands share a hold) — foot contacts do not count toward start. Finish hold = the topmost route-coloured `hold` touched by a **hand**, assuming completion. Progress = route holds touched by hand and the furthest hold reached by hand; foot-only contacts are logged in the timeline (§8.6) but do not advance progress; a failed attempt is reported as progress short of the finish. Volume contacts are logged as real contacts (§8.6) but never count toward progress — no reduced weight is applied, they simply don't count (D-022). A contact resting on stale tier-3 keypoints (§3, D-018's provenance rule) stays unknown and must not advance progress. The gym's small silver round start/finish tags are not relied on. Ordering for "furthest hold" by height fails on traverses (rule TBD). Missed holds shorten the route and overstate progress.
 
 ### 8.8 Per-move attempt comparison — stretch (D-020)
 

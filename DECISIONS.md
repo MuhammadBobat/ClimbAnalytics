@@ -191,7 +191,7 @@ LDLJ = -ln( (t2 - t1)^3 / v_peak^2  ·  ∫_{t1}^{t2} |d²v/dt²|² dt )
 **Colour palette — explicit placeholder, not fabricated:** this project's gym's actual route-colour palette (which hex/HSV ranges correspond to which grades) is not yet recorded anywhere in this repo. Per `CLAUDE.md` rule 9, this must come from the author's own knowledge of their gym, not be guessed — left as `GYM_COLOUR_PALETTE = None  # TBD, see DECISIONS.md D-017a` in code until supplied.
 **Rationale:** keeps the harder, label-expensive part of the problem (localisation under lighting/occlusion/clutter) to a single-class detector — an easier learning problem than the multi-class/custom-colour-classifier models reviewed in D-009 — while keeping route/grade assignment in cheap, interpretable, non-learned HSV matching. Avoids Ludford's (2024) reported colour-classification accuracy problems (72–88%), since this project's matching only needs one known gym's fixed colour set, not generalised conditions.
 **Source(s):** D-009's original citations (Reiff 2024, Ludford 2024, Maschek & Schedl 2025) remain the evidentiary basis for the generalisation/annotation-cost concerns, reweighed rather than superseded. Roboflow model-assisted labelling — no specific measured labelling-time citation logged; see D-017a follow-up.
-**Status:** proposed — author has authorized starting implementation (2026-10-04). **Update (2026-10-04):** this entry originally flagged supervisor sign-off (`PROPOSAL.md` §9) as a required gate before/while building. The author has since made an explicit executive decision to proceed without it. Recorded here as what actually happened, not as a retroactive claim that sign-off took place.
+**Status:** proposed — author has authorized starting implementation (2026-10-04). **Update (2026-10-04):** this entry originally flagged supervisor sign-off (`PROPOSAL.md` §9) as a required gate before/while building. The author has since made an explicit executive decision to proceed without it. Recorded here as what actually happened, not as a retroactive claim that sign-off took place. **Update (2026-10-21):** the detector's output type changed from bounding boxes to instance segmentation masks, and its class set from one (`hold`) to three (`hold` / `descent_hold` / `volume`) — see D-022. This entry's hybrid design (detector + classical HSV colour-matching) and its authorisation to proceed stand unchanged; only the model's output type and class set changed.
 **Supersedes:** D-009
 
 ## D-017a: Gym colour→grade mapping — partially supplied (grade bands known, HSV calibration still pending)
@@ -245,7 +245,19 @@ The gym's own start/finish markers (small silver round metal tags) are **not** r
 **Known risks:** a missed hold shortens the route and overstates progress (detector recall must be measured); "furthest hold" by vertical position fails on traverses (ordering rule TBD — decide when hold_contact.py exists, log as an addendum); colour→route membership depends on HSV calibration (D-017a, task 0.5.5), and Ludford (2024) reported 72–88% colour classification accuracy (cited in D-009); "first touched" start holds depend on the contact timeline being correct at the start of a clip.
 **Rationale:** avoids per-problem manual input, consistent with the hybrid detector's purpose (D-017).
 **Source(s):** author's knowledge of own gym (2026-10-07). No literature source for the route-definition heuristics — engineering heuristics, validate empirically.
-**Status:** proposed — blocked on D-018's dependencies.
+**Status:** proposed — blocked on D-018's dependencies. See 2026-10-21 addendum below (route-membership/start/finish/progress wording updated for the three-class segmentation detector, D-022).
+
+**Addendum (2026-10-21) — route definition updated for the three-class segmentation detector (D-022):** this does not rewrite the decision above; it replaces the route-membership/start/finish/progress wording, which relied on the gym's silver start/finish tags and "topmost hold" without distinguishing hold classes. That wording predates D-022's `hold` / `descent_hold` / `volume` class split.
+- **Route membership:** `hold`-class objects (D-022) of the route colour, spatially clustered, selecting the cluster the climber actually contacts. `volume` and `descent_hold` objects are excluded from route membership entirely — they are never route members and never the finish hold.
+- **Start holds:** the first one or two holds touched by the climber's **hands** (one hold if both hands share it). Foot contacts do not count toward start.
+- **Finish:** the topmost route-coloured `hold` touched by a hand, assuming the climb was completed.
+- **Route progress:** the furthest route hold reached by hand, plus the count of route holds touched by hand.
+- **Foot-only contacts:** logged in the contact timeline (dwell, foot usage, D-018) but do **not** advance route progress.
+- **No weights:** a lower weight for volume contacts was considered and rejected as unjustified — volumes don't count toward progress at any weight (per D-022's downstream-roles rule), rather than counting at a reduced one.
+- **Stale keypoints:** a contact resting on stale tier-3 keypoints (D-007 provenance rule, carried over from D-018) stays "unknown" and must not advance progress.
+- **Limitation, stated as an assumption, not resolved here:** same-route-colour problems that overlap spatially will still merge under this clustering rule — the same limitation the original D-019 text already flagged, restated explicitly for the hands-based rule.
+**Source(s):** author's direct knowledge of own gym (2026-10-21), same basis as D-019's original sourcing. No literature source for the hands-based start/finish/progress refinement — engineering heuristic, validate empirically.
+**Status:** this addendum updates D-019's route-definition wording only; D-019's overall status is unchanged (proposed, blocked on D-018's dependencies).
 
 ## D-020: Per-move attempt-to-attempt comparison by hold sequence — stretch goal; layout matching proposed as the D-013 resolution
 **Date:** 2026-10-07
@@ -284,3 +296,43 @@ The gym's own start/finish markers (small silver round metal tags) are **not** r
 **Rationale:** per CLAUDE.md rule 9, every number above comes from code actually run against this project's own footage in `experiments/blazepose_z_spike/`, not estimated.
 **Source(s):** `experiments/blazepose_z_spike/REPORT.md` (direct experimentation, own footage, 2026-10-07); `mediapipe` package (Apache 2.0, confirmed via `pip show`). No literature source for z-accuracy in climbing specifically — none found, consistent with the gap already noted when this spike was commissioned.
 **Status:** proposed — inconclusive, not adopted. Cross-reference D-016 (foot keypoints / prior MediaPipe exploration), D-015 and D-018 (why depth/distance-to-wall matters but stays out of scope).
+
+## D-022: Hold detector model — YOLOv8n-seg instance segmentation with polygon labels, three classes
+**Date:** 2026-10-21
+**Decision:** Change the hold detector's output type from bounding boxes to instance segmentation masks, and its class set from one (`hold`) to three. This supersedes only the box-output/single-class **wording** in D-017 — D-017's hybrid design (fine-tuned detector + classical HSV colour-matching) and its authorisation to proceed stand unchanged; only the model's output type and class set change.
+
+Train one **YOLOv8n-seg** model (`ultralytics`), polygon-annotated in Roboflow using Smart Select, with three classes:
+- `hold` — every real hold, including coloured volumes and holds mounted on volumes (each mounted hold is its own label; a coloured volume is itself labelled `hold`, since it carries a route colour).
+- `descent_hold` — holds marked with red arrows, for downclimbing only.
+- `volume` — grey volumes (large, always-on wall extensions, not route-specific).
+
+**Context:** holds are often irregular in shape, so a bounding box's centre can fall off the hold itself, and a box necessarily includes background pixels around an irregular shape. That background contaminates both colour sampling (D-017a) and any future contact test (D-018) that checks proximity to the hold's actual extent rather than its box.
+
+**Consequences:**
+- HSV colour matching (D-017a) samples pixels **inside the mask**, not the bounding box.
+- Contact tests (D-018) use the polygon as the contact region, not a box.
+- Boxes, where still needed (e.g. the §8.1 IoU-merge step across sampled frames), are derived from each polygon's bounding rectangle rather than detected directly.
+
+**Downstream roles:**
+- `hold` objects can be route members (D-019).
+- `volume` and `descent_hold` are never route members and never the finish hold.
+- `descent_hold` is ignored in analytics entirely (contact timeline, route progress, metrics).
+- Volume contacts are real physical contacts — logged in the contact timeline (D-018) like any other touch event — but they do not count toward route progress (D-019), since a volume carries no single route's colour and isn't part of any route's hold sequence.
+
+**Annotation rule:** polygons only. A box-type label appearing in an exported segmentation file is a data error, not a valid `hold` label — see `training/check_seg_labels.py` below, written specifically because a real user export already contained two such lines mixed in with polygons.
+
+**Evidence:** no literature source — engineering decision, validate empirically. No accuracy/mAP figure is given here; validation results are TBD pending training.
+
+**Open questions, listed explicitly rather than silently assumed:**
+- Whether YOLOv8n-seg is accurate enough on this gym's holds — to be checked against the box model (D-017) on a held-out split once both exist.
+- Class index order — must be read from the Roboflow export's `data.yaml` at train/inference time, never assumed or hardcoded (same rule the new label-check script follows).
+- How many `volume` examples exist in the annotated set — volumes are likely rarer than regular holds, so small-class performance is unknown until counted.
+
+**Scope note:** `CLAUDE.md` rule 4 and `PROPOSAL.md` §3 previously described a "single-class" hold localiser; that wording is updated in both files to "one YOLOv8n-seg hold detector with three classes." This remains the same single narrow training exception D-017 already authorised — it is **not** permission to fine-tune the pose model or anything else.
+**Rationale:** polygon masks match the geometry of real holds far better than axis-aligned boxes, and sampling colour only from inside the mask removes the background-pixel contamination a box would include. Both points are engineering reasoning about this specific change, not a sourced method — no new citation is claimed for them.
+**Source(s):** no literature source — engineering decision, validate empirically. D-017's own sources (Reiff 2024, Ludford 2024, Maschek & Schedl 2025) remain the evidentiary basis for the underlying hold-detection approach; this entry changes output representation and class count only, not that basis.
+**Status:** proposed
+
+**Annotation rules (appended 2026-10-21):** label only holds on the wall actually being climbed, including small, blurry, or partly hidden ones — do not skip a hold just because it's hard to see if it's clearly part of the climbing wall. Do not label holds on background walls or adjacent walls visible in the same frame. Skip ambiguous cases (e.g. a hold where it's unclear which wall it belongs to) rather than guessing either way. Apply this rule consistently across every annotated image, not just the easy ones. No literature source — engineering decision, validate empirically.
+
+**Open question (not decided, not implemented):** even with this annotation rule, the trained detector may still fire on background/adjacent-wall holds at inference time, since the rule only constrains training labels, not what the model generalises to. A per-setup climbing-wall region mask (manually or semi-automatically defined once per camera setup, to suppress detections outside it) may be needed to handle this. This is **not yet decided** — flagged here as an open question only; do not build a region-mask mechanism until a separate decision is made.
