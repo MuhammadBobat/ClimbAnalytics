@@ -1,0 +1,6 @@
+clip,fps,frames,frames_with_com,frames_without_com,without_com_detector_drop,without_com_excluded_by_list,without_com_low_confidence,without_com_unspecified,n_com_speed_values,mean_com_speed_px_s,max_com_speed_px_s
+IMG_2412.MOV,29.987,718,716,2,2,0,0,0,714,103.902,634.452
+IMG_2416.MOV,29.996,917,893,24,24,0,0,0,884,74.474,329.531
+IMG_2417.MOV,29.945,980,980,0,0,0,0,0,979,95.432,561.099
+IMG_2419.MOV,29.997,850,825,25,7,18,0,0,821,116.049,1922.208
+IMG_2420.MOV,29.997,2421,2414,7,7,0,0,0,2408,82.041,1077.359
