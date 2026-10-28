@@ -394,3 +394,13 @@ Train one **YOLOv8n-seg** model (`ultralytics`), polygon-annotated in Roboflow u
 **Rationale:** `CLAUDE.md` rule 3 — a different pose checkpoint is a change of substance, so it is logged as a proposal and tested before any adoption, not swapped in quietly.
 **Source(s):** Maschek & Schedl (2025), arXiv 2505.12854 (Figure 4a, model name "vitpose-l-coco_25"), as re-checked by the author on 2026-10-28; easy_ViTPose model card wording as quoted in D-012/D-016's addenda. Neither source was re-read in this session.
 **Status:** proposed — evaluation not started.
+
+## D-024: Single-climber lock-on — observed failure and options
+**Date:** 2026-10-28
+**Decision:** None yet. Records a failure mode of the lock-on heuristic in D-002 / ARCHITECTURE.md §2 and the fix options; nothing is changed.
+**Observation (full-clip run, validation/output_full/, viewed frame 605 of IMG_2419):** The only confirmed wrong-person lock is IMG_2419 frames 597-614, where the tracker followed a bystander on the mat. IMG_2419 frames 592-596 are a lost climber box (climber confidence 0.50 at frame 591, dropped by the detector's 0.5 cut-off at 592-596). Extra person boxes elsewhere (e.g. IMG_2420 frames 2369-2420, an orange hold detected as a person; frame 1850, a partial person at the edge; frame 2390, a duplicate box on the climber) are mostly holds, partial people or duplicate boxes, and the chosen box was the climber.
+**Mechanism:** select_person_box takes the box nearest the previous centre, with no distance limit. When the climber box dropped out, the only remaining box (the bystander) was accepted, and because the previous centre then became the bystander's, the choice reinforced itself even after the climber's box reappeared (confidence 0.80 at frame 605), until the bystander left the detections at frame 615.
+**Options (none chosen, no thresholds set):** (1) distance gate relative to the previous box size; (2) size consistency against recent boxes; (3) re-acquisition rule after a gap; (4) wall-region mask (only accept boxes on the climbed wall); (5) YOLOv8-pose with ByteTrack (the documented fallback in ARCHITECTURE.md §2, whose stated trigger is ViTPose cost/complexity, not tracking). Thresholds, if any, are to be swept on own footage and logged; IMG_2417 has no tracking failure and would serve as a regression check.
+**Interim handling:** frames listed in validation/frame_exclusions.csv are excluded from gap statistics; keypoint data is unmodified.
+**Source(s):** no literature source — engineering observation on own footage, validate empirically.
+**Status:** proposed
