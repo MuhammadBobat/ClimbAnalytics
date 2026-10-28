@@ -63,7 +63,7 @@ Original proposal goals, plus amendments made during pre-term planning (each ame
 
 ## 7. Explicit scope boundaries — OUT OF SCOPE
 
-- **Model fine-tuning / training**, except the single-class hold detector in §3 (`DECISIONS.md` D-017). Pose models remain pretrained-only.
+- **Model fine-tuning / training**, except the three-class YOLOv8n-seg hold detector in §3 (`DECISIONS.md` D-017, D-022). Pose models remain pretrained-only.
 - **Distance-to-wall / any depth (z) quantity.** Not measurable with a single perpendicular 2D camera (D-008, D-015). Hold detection and per-move comparison do not replace it. A 2.5D route (e.g. BlazePose root-relative z) is unproven for this use and only an optional exploratory spike, not a goal. The spike ran (`DECISIONS.md` D-021) and was inconclusive — no ground truth was available — so this stays out of scope.
 - **Hold-relative feedback is no longer out of scope** (D-018, 2026-10-07) — see §3. It remains blocked until its dependencies exist; do not build it ahead of the four-state classifier and the hold detector.
 - **Real-time or mobile deployment.**
