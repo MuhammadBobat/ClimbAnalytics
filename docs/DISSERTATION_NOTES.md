@@ -39,17 +39,20 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 | D-010 | Evaluation — qualitative now, quantitative deferred | proposed |
 | D-014 | tIoU as the planned metric if quantitative evaluation (D-010) is picked up | proposed — dependent on D-010 being promoted from deferred to active; no action needed until then. |
 
-**Question:** _to be filled in part 2._
+**Question:** Who settles the project's scope, and how is the system to be judged? D-001 asked what "manual labelling" the supervisor anticipated; D-010 fixes the evaluation plan (qualitative now, quantitative deferred); D-014 names the metric (temporal IoU) to use if a quantitative evaluation is picked up.
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. D-001 and D-010 are dated 2026-07-27 and first appear in git in `5181280` (2026-08-02, the commit that added `DECISIONS.md`). D-014 is dated 2026-08-02 and first appears in `dd343be` (2026-10-04).
+2. D-001 was closed with the author's executive decision not to pursue supervisor clarification (entry dated 2026-10-04; first in git in `6f1eb27`, 2026-10-07).
+3. D-010 is applied as qualitative evaluation only: visual inspection of overlays (D-002a, `dd343be`, 2026-10-04) and the author's review of overlay clips (D-025, `87c8f0f`, 2026-10-28). No quantitative evaluation was started.
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** None for D-001, D-010 or D-014 themselves. There is no ground-truth annotation of any kind in the repo. The footage used for the qualitative checks is described under topic B.
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** None for this topic. The qualitative evidence sits under topic B (`validation/output/summary.csv`), topic E (`evaluation/3.1/`) and topic F (`evaluation/2.2b/output_full/`).
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-001 closed; D-010 proposed; D-014 proposed (dependent on D-010 being promoted). Statuses as in the table above.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** Nothing quantitative about accuracy: no ground truth exists, so no accuracy, precision, sensitivity or tIoU figure exists for any component. What the supervisor's original comment meant, and whether it was ever answered, is not recorded in the repo (D-001 says only that it was closed).
 
 **References:** register rows R1, R14.
 
@@ -66,17 +69,22 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 | D-016 | Foot keypoints — ViTPose-WholeBody and MediaPipe both explored, staying on ViTPose-L body-only for now | implemented (exploration complete, decision made to stay on ViTPose-L body-only). Revisit if/when foot placement or smoothness is promoted into core scope. |
 | D-023 | Evaluate the easy_ViTPose coco_25 checkpoint as a foot-keypoint candidate | proposed — evaluation not started. |
 
-**Question:** _to be filled in part 2._
+**Question:** Which 2D pose model, through which implementation route, outputting which keypoints, and does it track a real climber on this project's own footage well enough to build on? Can foot or toe keypoints be obtained?
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. 2026-07-27, D-002: ViTPose-L chosen from the literature (Maschek & Schedl 2025, R1), paired with a nearest-box / largest-confidence person selection. D-011: implemented via Hugging Face `transformers` with `usyd-community/vitpose-plus-large` and YOLOv8n as the box source, not `mmpose` (not attempted: Python 3.14 on Apple Silicon, CPU-only). Smoke test found the mixture-of-experts checkpoint needs `dataset_index` (0 = COCO used throughout). D-012: the checkpoint's config gives 17 COCO keypoints, not 25. First in git in `5181280` (2026-08-02), together with `validation/validate_vitpose.py`.
+2. 2026-10-04, `dd343be`: D-002a, ViTPose-L run on five own clips (first 100 frames each, `--max-frames 100`) and visually inspected; one occlusion event reviewed (IMG_2412 frame 64, right wrist confidence 0.257, position stayed smooth). D-016: `dataset_index=5` tried for foot keypoints and rejected (the decode head stays at 17 channels, and confidences came out off-scale, about 2.0 to 3.1); MediaPipe Pose "heavy" tried on IMG_2412 (150 frames) and not adopted (weaker visibility than ViTPose-L); `mmcv`/`mmpose`/`mmengine` PyPI check; `mediapipe` 1.0.x crash on Apple Silicon, pinned to 0.10.35.
+3. 2026-10-04, `e7140a7` and `39d60aa`: stale "COCO-25" claims corrected in `ARCHITECTURE.md` and in D-002's heading.
+4. 2026-10-28, `8870e73`: the author's re-check of Maschek & Schedl found they ran a COCO-plus-feet "coco_25" checkpoint (easy_ViTPose); D-002's accuracy numbers come from that checkpoint, not the one this project runs (D-002, D-012 and D-016 addenda). D-023 opened to evaluate that checkpoint as a foot-keypoint candidate; evaluation not started.
+5. 2026-10-28: ViTPose-L re-run on the five full clips (`validation/output_full/`), with the output-folder guard and the `n_person_boxes` column added to `validate_vitpose.py` (`3fd56f0`). The first 100 frames of the full run reproduced the earlier 100-frame run exactly (recorded in the D-007 whole-clip addendum, `00ec2a0`).
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** Five own clips (IMG_2412, 2416, 2417, 2419, 2420). D-002a: first 100 frames of each (500 frames). Whole-clip run: 5,886 frames (718, 917, 980, 850 and 2,421 frames; `validation/output_full/summary.csv`), of which 5,846 had a person box (detector drops: 40). MediaPipe feet exploration: IMG_2412, 150 frames. The sixth, downloaded clip (Rock_Spot) is not the author's footage and is excluded from all later analysis (D-002a note, 2026-10-28). Recording device, resolution, climber and route per clip: not recorded in the repo.
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** `validation/output/summary.csv` and `*_flags.csv` (100-frame run; table in D-002a); `validation/output_full/summary.csv` (whole clips); D-016 for the foot-keypoint exploration (its numbers are in the entry text; the exploration script was scratchpad-only and is not in the repo); library versions in `evaluation/3.1/output_full/manifest.txt`. All of `validation/output*/` is gitignored.
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-002 validated (qualitative); D-002a implemented; D-011 implemented; D-012 implemented; D-016 implemented (stay on ViTPose-L body-only); D-023 proposed (not started). Statuses as in the table above.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** D-002a is not a quantitative accuracy comparison (no ground truth; it stays deferred under D-010), covers only partial clips for the 2026-10-04 run, and reviewed one occlusion event in detail. D-002's accuracy figures belong to a different checkpoint. Nothing here says the easy_ViTPose coco_25 weights load, what their 25 keypoints are, or how accurate they are on this footage (D-023, unverified). The MediaPipe comparison is one clip and compares confidence and visibility scores that are not the same measurement.
 
 **References:** register rows R1, R21, R22, R23, R24, R25.
 
@@ -88,17 +96,21 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 |---|---|---|
 | D-024 | Single-climber lock-on — observed failure and options | proposed |
 
-**Question:** _to be filled in part 2._
+**Question:** How is the single climber kept locked across frames, and where does the lock-on fail? D-002 and D-011 fix the box source (YOLOv8n, person class) and the selection rule; D-024 records an observed failure.
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. 2026-07-27, D-002 and D-011 (`5181280`): box from YOLOv8n; take the highest-confidence box on the first frame, then the box nearest the previous centre; no distance limit.
+2. 2026-10-28, `3fd56f0`: `validate_vitpose.py` refuses to overwrite an existing output folder and logs `n_person_boxes` (people detected per frame) at the end of its keypoint and flag CSVs; tracking logic unchanged. Whole-clip run (`validation/output_full/`).
+3. 2026-10-28: boxes checked per clip. The only confirmed wrong-person lock is IMG_2419 frames 597-614 (a bystander on the mat; the climber's box was dropped for frames 592-596, then stayed weak). Extra boxes elsewhere were mostly holds, partial people or duplicate boxes. Those frames are listed in `validation/frame_exclusions.csv` and excluded from the gap statistics (list introduced in `e0a597e`).
+4. 2026-10-28: D-024 logged with the failure mechanism and the fix options, none chosen (`6517c14`), then the detector-confidence observation for IMG_2419 (`599ef09`). The tracking fix is to be an addendum or a later ID; none is built.
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** Five whole clips (5,886 frames). Frame-level counts of frames with more than one person box, per clip: not recorded in the repo (the `n_person_boxes` column exists in the gitignored `validation/output_full/*_keypoints.csv`). The frames inspected visually (IMG_2419 frame 605, IMG_2420 frames 1850 and 2390, and detector re-runs on IMG_2419 frames 590-615) are described in D-024; the images and the re-run script are not in the repo.
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** `validation/frame_exclusions.csv` (the one exclusion, with its reason and mechanism); D-024 in `DECISIONS.md`; `validation/output_full/summary.csv` for detection rates; `evaluation/3.1/output_full/frame_losses.csv` for detector drops and the excluded span.
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-024 proposed (observation and options only; no decision on the fix). Statuses as in the table above.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** It is not a tracking error rate: it rests on one confirmed failure and a handful of spot checks, with no per-frame identity labels. No distance gate or other fix has been tried, so nothing is known about their effect. D-024 notes that a distance gate alone would stop the wrong lock but still leave the climber untracked for about the same frames.
 
 **References:** register rows R25.
 
@@ -112,17 +124,20 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 | D-013 | Cross-session scale calibration — open question, needed before attempt comparison is built | proposed — not required for core pipeline (which only needs internal, single-session consistency); required before implementing the attempt-comparison feature specifically. Revisit when that feature is picked up. **Update (2026-10 … |
 | D-021 | BlazePose (MediaPipe) z-values as a distance-to-wall signal — exploratory spike, inconclusive, not adopted | proposed — inconclusive, not adopted. Cross-reference D-016 (foot keypoints / prior MediaPipe exploration), D-015 and D-018 (why depth/distance-to-wall matters but stays out of scope). |
 
-**Question:** _to be filled in part 2._
+**Question:** May pixel-space displacement and velocity be used (a fixed, perpendicular camera, D-008)? What scale calibration would cross-session comparison need (D-013)? Can a depth or distance-to-wall signal be obtained from BlazePose z (D-021)?
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. 2026-07-27, D-008 (`5181280`): assume a camera exactly perpendicular to the wall, fixed, with no pan, tilt or zoom. D-013 (dated 2026-08-02, first in git in `dd343be`): cross-session scale calibration left as an open question. D-020 (`6f1eb27`, 2026-10-07) proposes layout matching as its resolution.
+2. 2026-10-07, `6f1eb27`: D-021 logged. A BlazePose (MediaPipe, "heavy") z-value spike ran in isolation (`experiments/blazepose_z_spike/`, branch `spike/blazepose-z`) and was inconclusive. The spike's source files were committed to that branch and pushed on 2026-10-28 (`cdf40f2`), with a README stating it cannot be reproduced from a clean clone.
+3. 2026-10-28, `8f3f9bd` and `0b4a3f9`: the camera-setup claims in PROPOSAL §4 and D-008 were corrected after the sources were checked. Maschek & Schedl filmed with a handheld camera at 90° to an 8.5 m, non-inclined wall (their "Data acquisition" section); Reiff (2024) used a single ground-level, front-facing camera and does not say whether it was fixed or perpendicular. The fixed camera is therefore this project's own assumption.
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** D-021: five clips, first 100 frames each, matched to the saved ViTPose-L frames (`validation/output/`), with 784-800 comparisons per clip (numbers in D-021). D-008 and D-013 have no data. Whether the author's own footage was filmed on a tripod, and the camera's angle to the wall: not recorded in the repo (the assumption is stated, not measured).
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** D-021 in `DECISIONS.md` (findings quoted from `experiments/blazepose_z_spike/REPORT.md`, which exists on branch `spike/blazepose-z`, not on `main`). Camera wording: `DECISIONS.md` D-008, `PROPOSAL.md` §4 and register rows R1 and R18.
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-008 implemented (an assumption in the scope, not a tested result); D-013 proposed (open); D-021 proposed (inconclusive, not adopted). Statuses as in the table above.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** D-021 has no ground truth, covers 100 frames per clip, did not test the original hypothesis, and found raw z unusable without smoothing; it supports no accuracy claim either way. Nothing tests that this project's footage meets the perpendicular, fixed-camera assumption or how far the camera moved between sessions, so every pixel-space number rests on that assumption (D-008, D-013).
 
 **References:** register rows R1, R12, R18, R24.
 
@@ -134,17 +149,22 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 |---|---|---|
 | D-007 | Occlusion handling — three-tier framework | proposed — not yet validated against real occlusion events. |
 
-**Question:** _to be filled in part 2._
+**Question:** How should low-confidence or missing keypoints be handled, and are the tier boundaries (under 5, 5-20, over 20 frames) sensible for this footage? D-007 adopts a three-tier design (spline, Kalman, root-lock) that is this project's own, with no literature source for the boundaries.
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. 2026-07-27, D-007 (`5181280`): three-tier framework adopted, keyed to per-joint confidence below 0.5.
+2. 2026-10-04, `dd343be`: one occlusion event reviewed in detail (D-002a: IMG_2412 frame 64, confidence 0.257 with a smooth, plausible position).
+3. 2026-10-28: `metrics.py` loads keypoint CSVs and treats confidence below 0.5, or an absent frame, as a gap, reporting the two causes separately (`f744622`). The gap-statistics script was written (`d23ddfa`) and extended with frame exclusions and truncation flags (`e0a597e`) and machine-readable outputs (`b43bb0b`). An early version counted whole-frame detector drops as occluded on every joint; this was corrected before the script was first committed (the script's comments explain why), so no commit records that state.
+4. Results logged as D-007 addenda: 100-frame excerpts (`8bed60e`), whole clips (`00ec2a0`), pipeline-joint figures (`32ad2f2`); outputs committed in `34bdd08`. The Cheng et al. (2019) citation and what it does and does not support: `8870e73`.
+5. The hide-and-fill test that D-007 names as its validation, and `occlusion_handling.py` (gap filling, step 3.2 in the author's plan labels), do not exist in the repo.
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** Excerpts: five clips, 500 frames, 8,449 joint observations, 29 joint-level events. Whole clips: five clips, 5,886 frames (5,828 used after 40 detector-drop frames and 18 frames excluded by list), 99,076 joint observations, 558 joint-level events (17 detector-drop events); for the eight pipeline joints, 115 events. Exact counts and the independent recount are in the D-007 addenda.
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** `evaluation/3.1/output_full/` and `evaluation/3.1/output/` (`events.csv`, `summary.csv`, `frame_losses.csv`, `manifest.txt`, `report.md`); `validation/analyze_occlusion_gaps.py`; `validation/frame_exclusions.csv`; the three D-007 addenda dated 2026-10-28.
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-007 proposed (not yet validated against real occlusion events). Statuses as in the table above.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** It cannot validate the 5 and 20 frame boundaries or the fill methods: five clips, no ground truth for a joint's true position during a gap, and no hide-and-fill test. A confidently wrong keypoint (confidence at or above 0.5 during an occlusion) is invisible to this statistic. Events next to a clip edge or a dropped or excluded frame are truncated, so their lengths are lower bounds. The 100-frame excerpts understated limb gaps (3.4 against 5.6 events per 1,000 observations on whole clips).
 
 **References:** register rows R1, R11.
 
