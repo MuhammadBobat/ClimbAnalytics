@@ -54,6 +54,11 @@ for frames where the tracker locked onto the wrong person.
 Truncation: a run next to a dropped/excluded frame (or the clip start/end) is cut
 there, so its length is a lower bound. Events are flagged for both cases.
 
+Outputs: besides the markdown report, a run writes machine-readable files to
+evaluation/3.1/<input-folder-name>/ (events.csv, summary.csv, frame_losses.csv,
+manifest.txt, report.md), all built from the same event objects, so the tables and
+the report cannot disagree. Videos and raw keypoint CSVs are never copied there.
+
 Usage:
     python validation/analyze_occlusion_gaps.py
     python validation/analyze_occlusion_gaps.py --input-dir validation/output_full
@@ -63,17 +68,43 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import importlib.metadata
+import os
+import platform
+import subprocess
+import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
-import sys
+from datetime import date
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 # D-007's threshold is defined once, in metrics.py (repo root).
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from metrics import OCCLUSION_CONFIDENCE_THRESHOLD  # noqa: E402
+sys.path.insert(0, str(REPO_ROOT))
+from metrics import OCCLUSION_CONFIDENCE_THRESHOLD, TRUNK_CENTROID_PROXY_WEIGHTS  # noqa: E402
 
 # D-007 / ARCHITECTURE.md §3's tier boundaries, in frames.
 TIER_BOUNDARIES_FRAMES = (5, 20)
+
+# Pipeline joints: the joints a downstream metric actually uses.
+#  - CoM proxy: the four trunk joints, taken from metrics.py so there is one definition
+#    (D-005 follow-up).
+#  - Four-state classifier: pelvis proxy = hip midpoint (already in the trunk set) and
+#    limbs = both wrists, both ankles — ARCHITECTURE.md §4.4. The contact timeline
+#    (§8.6) uses the same wrists and ankles.
+# Elbows, knees and the face points are not used by any current metric.
+CLASSIFIER_LIMB_JOINTS = ("left_wrist", "right_wrist", "left_ankle", "right_ankle")
+PIPELINE_JOINTS = frozenset(TRUNK_CENTROID_PROXY_WEIGHTS) | frozenset(CLASSIFIER_LIMB_JOINTS)
+
+# Pose-run facts recorded in the manifest. They mirror validate_vitpose.py (which cannot
+# be imported here: it pulls in torch/cv2); tests/test_gap_outputs.py fails if they drift.
+VITPOSE_MODEL_NAME = "usyd-community/vitpose-plus-large"  # D-011, D-012
+VITPOSE_DATASET_INDEX = 0                                   # COCO expert, D-011
+DETECTOR_WEIGHTS = "validation/weights/yolov8n.pt"          # person-box detector, D-011
+MANIFEST_LIBRARIES = ("torch", "transformers", "ultralytics", "opencv-python", "numpy",
+                      "Pillow", "huggingface_hub")
 
 COCO17_NAMES = [
     "nose", "left_eye", "right_eye", "left_ear", "right_ear",
@@ -98,12 +129,13 @@ class ClipGapStats:
     clip: str
     fps: float
     total_frames: int  # full observed frame_idx range, inclusive
-    n_excluded_frames: int = 0  # missing_detection frames, excluded from joint-level counts
+    n_dropped_frames: int = 0  # detector drops (missing_detection), excluded from joint-level counts
     n_detected_frames: int = 0  # frames used for joint-level counts (detected, not excluded)
     excluded_frames: list[int] = field(default_factory=list)  # from --exclusions, within the clip
     frame_count_known: bool = False  # True if total_frames came from summary.csv
     missing_detection_events: list[GapEvent] = field(default_factory=list)
     joint_gap_events: dict[str, list[GapEvent]] = field(default_factory=dict)
+    low_conf_frames: dict[str, int] = field(default_factory=dict)  # used frames with conf < threshold
 
 
 def load_keypoints_long(path: Path) -> list[dict]:
@@ -238,9 +270,10 @@ def analyze_clip(
     # frame set only. Detector drops above are unaffected and reported as before.
     excluded_in_clip = sorted(f for f in (excluded or set()) if f in detected_frames)
     used_frames = detected_frames - set(excluded_in_clip)
-    n_excluded_frames = (last_frame + 1) - len(detected_frames)
+    n_dropped_frames = (last_frame + 1) - len(detected_frames)
 
     joint_gap_events: dict[str, list[GapEvent]] = {}
+    low_conf_frames: dict[str, int] = {}
     for joint in COCO17_NAMES:
         conf_by_frame = joint_conf.get(joint, {})
         occluded_map = {
@@ -248,17 +281,19 @@ def analyze_clip(
             for f in used_frames
         }
         joint_gap_events[joint] = find_run_lengths(occluded_map, fps, last_frame)
+        low_conf_frames[joint] = sum(occluded_map.values())
 
     return ClipGapStats(
         clip=clip,
         fps=fps,
         total_frames=last_frame + 1,
-        n_excluded_frames=n_excluded_frames,
+        n_dropped_frames=n_dropped_frames,
         n_detected_frames=len(used_frames),
         excluded_frames=excluded_in_clip,
         frame_count_known=frame_count_known,
         missing_detection_events=missing_events,
         joint_gap_events=joint_gap_events,
+        low_conf_frames=low_conf_frames,
     )
 
 
@@ -296,6 +331,252 @@ def _ranges(frames: list[int]) -> str:
     return ", ".join(f"{a}-{b}" if a != b else str(a) for a, b in out)
 
 
+def _pipeline_order() -> list[str]:
+    return [j for j in COCO17_NAMES if j in PIPELINE_JOINTS]
+
+
+def render_pipeline_section(all_stats: list[ClipGapStats]) -> list[str]:
+    """Pipeline-joint view (see PIPELINE_JOINTS): same events, restricted to the joints
+    a downstream metric uses. Frames affected are low-confidence frames among used frames."""
+    joints = _pipeline_order()
+    used = sum(s.n_detected_frames for s in all_stats)
+    out = [f"## 4. Pipeline joints ({len(joints)}): {', '.join(joints)}\n"]
+    out.append(
+        f"Same events as section 2, restricted to joints used by the CoM proxy (D-005 "
+        f"follow-up) and the four-state classifier (ARCHITECTURE.md §4.4). Denominator for "
+        f"'% of used frames' is {used} used frames per joint.\n"
+    )
+    out.append("Per joint:\n")
+    for j in joints:
+        evs = [e for s in all_stats for e in s.joint_gap_events[j]]
+        b = bucket_events(evs)
+        low = sum(s.low_conf_frames[j] for s in all_stats)
+        pct = f"{100 * low / used:.2f}%" if used else "n/a"
+        out.append(
+            f"- {j}: {len(evs)} event(s) ({len(b['<5 frames'])} / {len(b['5-20 frames'])} / "
+            f"{len(b['>20 frames'])} by <5 / 5-20 / >20 frames), {low} low-confidence frame(s) "
+            f"= {pct} of {used} used frames"
+        )
+    out.append("\nPer clip (pipeline joints combined):\n")
+    for s in all_stats:
+        n_ev = sum(len(s.joint_gap_events[j]) for j in joints)
+        low = sum(s.low_conf_frames[j] for j in joints)
+        denom = len(joints) * s.n_detected_frames
+        out.append(
+            f"- {s.clip}: {n_ev} event(s), {low} low-confidence joint-frame(s) of {denom} "
+            f"used joint-frames ({len(joints)} joints x {s.n_detected_frames} used frames)"
+        )
+    all_ev = [(e, s.clip, j) for s in all_stats for j in joints for e in s.joint_gap_events[j]]
+    b = bucket_events([e for e, _, _ in all_ev])
+    out.append(
+        f"\nTotal: {len(all_ev)} event(s) ({len(b['<5 frames'])} / {len(b['5-20 frames'])} / "
+        f"{len(b['>20 frames'])})."
+    )
+    if all_ev:
+        e, clip, joint = max(all_ev, key=lambda t: t[0].length_frames)
+        out.append(
+            f"Longest pipeline-joint gap: {clip} {joint}, frames {e.start_frame}-{e.end_frame} "
+            f"({e.length_frames} frames, {e.length_seconds:.3f} s); touches clip boundary: "
+            f"{e.touches_boundary}; next to a dropped/excluded frame: {e.adjacent_to_unobserved}"
+        )
+    out.append("")
+    return out
+
+
+# --- Machine-readable outputs (evaluation/3.1/<input-folder-name>/) ------------------
+
+EVENTS_COLUMNS = [
+    "clip", "joint", "first_frame", "last_frame", "length_frames",
+    "touches_clip_start_or_end", "adjacent_to_dropped_or_excluded", "pipeline_joint",
+]
+SUMMARY_COLUMNS = [
+    "clip", "joint", "pipeline_joint", "unit", "n_events", "n_lt5", "n_5_to_20", "n_gt20",
+    "frames_total", "frames_detector_dropped", "frames_excluded_by_list", "frames_used",
+    "frames_low_conf", "pct_low_conf_of_used", "pct_unavailable_of_total",
+]
+FRAME_LOSS_COLUMNS = ["clip", "kind", "first_frame", "last_frame", "length_frames"]
+
+
+def _write_csv(path: Path, header: list[str], rows: list[list]) -> None:
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow(header)
+        w.writerows(rows)
+
+
+def write_events_csv(path: Path, all_stats: list[ClipGapStats]) -> None:
+    """One row per joint-level gap (all 17 joints), in clip / joint / first-frame order."""
+    rows = []
+    for s in all_stats:
+        for joint in COCO17_NAMES:
+            for e in sorted(s.joint_gap_events[joint], key=lambda e: e.start_frame):
+                rows.append([
+                    s.clip, joint, e.start_frame, e.end_frame, e.length_frames,
+                    e.touches_boundary, e.adjacent_to_unobserved, joint in PIPELINE_JOINTS,
+                ])
+    _write_csv(path, EVENTS_COLUMNS, rows)
+
+
+def _frame_runs(frames: list[int]) -> list[tuple[int, int]]:
+    out: list[list[int]] = []
+    for f in sorted(frames):
+        if out and f == out[-1][1] + 1:
+            out[-1][1] = f
+        else:
+            out.append([f, f])
+    return [(a, b) for a, b in out]
+
+
+def write_frame_losses_csv(path: Path, all_stats: list[ClipGapStats]) -> None:
+    """Whole-frame losses: detector drops (no person box) and frames excluded by list."""
+    rows = []
+    for s in all_stats:
+        runs = [("detector_drop", e.start_frame, e.end_frame) for e in s.missing_detection_events]
+        runs += [("excluded_by_list", a, b) for a, b in _frame_runs(s.excluded_frames)]
+        for kind, a, b in sorted(runs, key=lambda r: (r[1], r[0])):
+            rows.append([s.clip, kind, a, b, b - a + 1])
+    _write_csv(path, FRAME_LOSS_COLUMNS, rows)
+
+
+def _pct(num: int, den: int) -> str:
+    return f"{100 * num / den:.3f}" if den else ""
+
+
+def _summary_row(label_clip: str, label_joint: str, joints: list[str],
+                 stats_subset: list[ClipGapStats], unit: str) -> list:
+    n_j = len(joints)
+    events = [e for s in stats_subset for j in joints for e in s.joint_gap_events[j]]
+    b = bucket_events(events)
+    total = n_j * sum(s.total_frames for s in stats_subset)
+    dropped = n_j * sum(s.n_dropped_frames for s in stats_subset)
+    excluded = n_j * sum(len(s.excluded_frames) for s in stats_subset)
+    used = n_j * sum(s.n_detected_frames for s in stats_subset)
+    low = sum(s.low_conf_frames[j] for s in stats_subset for j in joints)
+    pipeline = all(j in PIPELINE_JOINTS for j in joints)
+    return [
+        label_clip, label_joint, pipeline, unit, len(events),
+        len(b["<5 frames"]), len(b["5-20 frames"]), len(b[">20 frames"]),
+        total, dropped, excluded, used, low,
+        _pct(low, used), _pct(low + dropped + excluded, total),
+    ]
+
+
+def write_summary_csv(path: Path, all_stats: list[ClipGapStats]) -> None:
+    """Per (clip, joint), ALL-clips per joint, and two group rows (pipeline joints, all 17).
+
+    Per-joint rows count frames; group rows count joint-frames (denominators are
+    n_joints x frames), stated in the `unit` column. pct_low_conf_of_used =
+    frames_low_conf / frames_used; pct_unavailable_of_total = (frames_low_conf +
+    frames_detector_dropped + frames_excluded_by_list) / frames_total.
+    """
+    pipeline = _pipeline_order()
+    groups = [("PIPELINE_JOINTS", pipeline), ("ALL_JOINTS", list(COCO17_NAMES))]
+    rows = []
+    for label, subset in [(s.clip, [s]) for s in all_stats] + [("ALL", all_stats)]:
+        for joint in COCO17_NAMES:
+            rows.append(_summary_row(label, joint, [joint], subset, "frames"))
+        for gname, gjoints in groups:
+            row = _summary_row(label, gname, gjoints, subset, "joint-frames")
+            row[2] = gname == "PIPELINE_JOINTS"
+            rows.append(row)
+    _write_csv(path, SUMMARY_COLUMNS, rows)
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _git(*args: str) -> str:
+    try:
+        r = subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, timeout=20)
+        return r.stdout.strip() if r.returncode == 0 else "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+def _library_version(*names: str) -> str:
+    for n in names:
+        try:
+            return importlib.metadata.version(n)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return "not installed"
+
+
+def _hf_snapshots() -> list[str]:
+    cache = os.environ.get("HF_HUB_CACHE") or str(
+        Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
+    )
+    d = Path(cache) / ("models--" + VITPOSE_MODEL_NAME.replace("/", "--")) / "snapshots"
+    return sorted(p.name for p in d.iterdir()) if d.is_dir() else []
+
+
+def build_manifest(
+    all_stats: list[ClipGapStats], input_dir: Path, footage_dir: Path,
+    exclusions_path: Path, today: str | None = None,
+) -> str:
+    L: list[str] = []
+    L.append("Occlusion-gap analysis manifest (validation/analyze_occlusion_gaps.py)")
+    L.append(f"date: {today or date.today().isoformat()}")
+    L.append(f"input folder: {input_dir.as_posix()}")
+    summary = input_dir / "summary.csv"
+    if summary.exists():
+        L.append(f"pose run completed (input summary.csv last modified): "
+                 f"{date.fromtimestamp(summary.stat().st_mtime).isoformat()}")
+    L.append("")
+    L.append("== Pose run (as recorded in validate_vitpose.py)")
+    L.append(f"pose model: {VITPOSE_MODEL_NAME}")
+    snaps = _hf_snapshots()
+    L.append("checkpoint snapshot(s) in local Hugging Face cache at analysis time: "
+             + (", ".join(snaps) if snaps else "none found"))
+    L.append(f"dataset_index: {VITPOSE_DATASET_INDEX} (COCO expert)")
+    wp = REPO_ROOT / DETECTOR_WEIGHTS
+    L.append(f"person detector weights: {DETECTOR_WEIGHTS} sha256 "
+             + (sha256_file(wp) if wp.exists() else "not found"))
+    L.append("")
+    L.append("== Analysis settings")
+    L.append(f"occlusion confidence threshold: {OCCLUSION_CONFIDENCE_THRESHOLD} "
+             "(joint is a gap when confidence < threshold; metrics.py)")
+    L.append(f"tier boundaries (frames): {TIER_BOUNDARIES_FRAMES[0]} / {TIER_BOUNDARIES_FRAMES[1]} "
+             "(<5, 5-20, >20; not validated)")
+    L.append(f"pipeline joints: {', '.join(_pipeline_order())}")
+    L.append("")
+    L.append("== Frame exclusion file")
+    if exclusions_path.exists():
+        L.append(f"path: {exclusions_path.as_posix()}")
+        L.append("contents (verbatim):")
+        L.append(exclusions_path.read_text().rstrip("\n"))
+    else:
+        L.append("none")
+    L.append("")
+    L.append("== Code and environment (at analysis time)")
+    L.append(f"git HEAD: {_git('rev-parse', 'HEAD')}")
+    L.append("last commit touching the script: "
+             + _git("log", "-1", "--format=%H", "--", "validation/analyze_occlusion_gaps.py"))
+    dirty = _git("status", "--porcelain", "--", "validation/analyze_occlusion_gaps.py",
+                 "metrics.py", "validation/frame_exclusions.csv")
+    L.append("script/metrics/exclusions modified since that commit: "
+             + ("unknown" if dirty == "unknown" else ("yes" if dirty else "no")))
+    L.append(f"python: {platform.python_version()}")
+    for lib in MANIFEST_LIBRARIES:
+        names = ("opencv-python", "opencv-python-headless") if lib == "opencv-python" else (lib,)
+        L.append(f"{lib}: {_library_version(*names)}")
+    L.append("(library versions are those of the analysis environment, which is the same "
+             "machine as the pose run but not recorded by it)")
+    L.append("")
+    L.append("== Clips")
+    for s in all_stats:
+        vp = footage_dir / s.clip
+        digest = sha256_file(vp) if vp.exists() else "video not found"
+        known = "" if s.frame_count_known else " (frame count not from summary.csv)"
+        L.append(f"{s.clip}: frames {s.total_frames}{known}, fps {s.fps:.3f} (from timestamps), sha256 {digest}")
+    return "\n".join(L) + "\n"
+
+
 def render_report(all_stats: list[ClipGapStats]) -> str:
     lines: list[str] = []
     lines.append("# Occlusion-gap statistics (real data, D-007 / ARCHITECTURE.md §3)\n")
@@ -325,7 +606,7 @@ def render_report(all_stats: list[ClipGapStats]) -> str:
         buckets = bucket_events(s.missing_detection_events)
         n = sum(len(v) for v in buckets.values())
         total_missing_events += n
-        lines.append(f"- {s.clip}: {n} event(s) total, {s.n_excluded_frames} frame(s) excluded from joint-level counts")
+        lines.append(f"- {s.clip}: {n} event(s) total, {s.n_dropped_frames} frame(s) excluded from joint-level counts")
         for label, events in buckets.items():
             if events:
                 lines.append(format_bucket_line(label, events))
@@ -379,6 +660,8 @@ def render_report(all_stats: list[ClipGapStats]) -> str:
                 lines.append(f"    {joint}: " + ", ".join(parts))
     lines.append("")
 
+    lines.extend(render_pipeline_section(all_stats))
+
     n_det = sum(s.n_detected_frames for s in all_stats)
     n_total = sum(s.total_frames for s in all_stats)
     lines.append("## Counts and n\n")
@@ -427,6 +710,10 @@ def render_report(all_stats: list[ClipGapStats]) -> str:
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--input-dir", type=Path, default=Path("validation/output"))
+    parser.add_argument("--footage-dir", type=Path, default=Path("footage/test"),
+                         help="source videos, only used for the manifest checksums")
+    parser.add_argument("--eval-dir", type=Path, default=Path("evaluation/3.1"),
+                         help="machine-readable outputs go to <eval-dir>/<input-folder-name>/")
     parser.add_argument("--exclusions", type=Path, default=Path("validation/frame_exclusions.csv"),
                          help="video,start_frame,end_frame,reason CSV of frames to exclude (default if present)")
     parser.add_argument("--output-file", type=Path, default=None,
@@ -451,6 +738,17 @@ def main():
     out_path = args.output_file or (args.input_dir / "occlusion_gap_report.md")
     out_path.write_text(report)
     print(f"\nReport written to {out_path}")
+
+    out_dir = args.eval_dir / args.input_dir.resolve().name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write_events_csv(out_dir / "events.csv", all_stats)
+    write_summary_csv(out_dir / "summary.csv", all_stats)
+    write_frame_losses_csv(out_dir / "frame_losses.csv", all_stats)
+    (out_dir / "report.md").write_text(report)
+    (out_dir / "manifest.txt").write_text(
+        build_manifest(all_stats, args.input_dir, args.footage_dir, args.exclusions)
+    )
+    print(f"Evaluation files written to {out_dir}")
 
 
 if __name__ == "__main__":
