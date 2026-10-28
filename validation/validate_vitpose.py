@@ -22,6 +22,13 @@ For each video in --input-dir, this script:
 Usage:
     python validation/validate_vitpose.py
     python validation/validate_vitpose.py --input-dir footage/test --max-frames 300
+    python validation/validate_vitpose.py --output-dir validation/output_full
+
+An --output-dir that already contains a summary.csv is refused unless --force is
+given, so earlier results (e.g. validation/output/, cited by D-002a / D-021) are
+not overwritten by accident. n_person_boxes (people the box detector found that
+frame, before the single-climber selection) is the LAST column of both the
+keypoints and flags CSVs.
 
 Requirements: see validation/requirements.txt
 """
@@ -242,13 +249,14 @@ def process_video(
     kp_writer.writerow([
         "video", "frame_idx", "timestamp_s", "keypoint_id", "keypoint_name",
         "x", "y", "confidence", "bbox_x", "bbox_y", "bbox_w", "bbox_h",
+        "n_person_boxes",
     ])
 
     flag_file = open(flags_csv_path, "w", newline="")
     flag_writer = csv.writer(flag_file)
     flag_writer.writerow([
         "video", "frame_idx", "timestamp_s", "reason", "mean_confidence",
-        "min_confidence", "num_low_conf_keypoints",
+        "min_confidence", "num_low_conf_keypoints", "n_person_boxes",
     ])
 
     prev_center: tuple[float, float] | None = None
@@ -273,7 +281,7 @@ def process_video(
 
         if box is None:
             n_missing += 1
-            flag_writer.writerow([video_path.name, frame_idx, f"{timestamp_s:.3f}", "missing_detection", "", "", ""])
+            flag_writer.writerow([video_path.name, frame_idx, f"{timestamp_s:.3f}", "missing_detection", "", "", "", len(boxes)])
             writer.write(draw_overlay(frame, None, None, None))
             frame_idx += 1
             continue
@@ -288,6 +296,7 @@ def process_video(
                 video_path.name, frame_idx, f"{timestamp_s:.3f}", kp_id, name,
                 f"{x:.2f}", f"{y:.2f}", f"{scores[kp_id]:.4f}",
                 f"{box.x:.1f}", f"{box.y:.1f}", f"{box.w:.1f}", f"{box.h:.1f}",
+                len(boxes),
             ])
 
         mean_conf = float(np.mean(scores))
@@ -305,7 +314,7 @@ def process_video(
             n_flagged += 1
             flag_writer.writerow([
                 video_path.name, frame_idx, f"{timestamp_s:.3f}", "+".join(reasons),
-                f"{mean_conf:.4f}", f"{min_conf:.4f}", n_low_conf,
+                f"{mean_conf:.4f}", f"{min_conf:.4f}", n_low_conf, len(boxes),
             ])
 
         writer.write(draw_overlay(frame, box, keypoints, scores))
@@ -350,6 +359,8 @@ def main():
                          help="YOLOv8n person-detection confidence threshold")
     parser.add_argument("--device", type=str, default=None,
                          help="cpu / mps / cuda — auto-detected if not set")
+    parser.add_argument("--force", action="store_true",
+                         help="allow writing into an output dir that already has a summary.csv")
     parser.add_argument("--max-frames", type=int, default=None,
                          help="limit frames per video, for a quick smoke test")
     args = parser.parse_args()
@@ -379,6 +390,14 @@ def main():
             "Add 2-3 test clips there and re-run.",
         )
         sys.exit(0)
+
+    if (args.output_dir / "summary.csv").exists() and not args.force:
+        print(
+            f"Refusing to write into {args.output_dir}: it already contains a "
+            "summary.csv. Pick a new --output-dir, or pass --force to overwrite.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
