@@ -4,7 +4,7 @@ Working notes for the dissertation write-up: one section per topic, one referenc
 
 ## How to read and maintain this file
 
-- **Status** is copied from `DECISIONS.md` as it appears there (statuses as at the last commit touching that file, `1f618d1`). It is never upgraded here. Where an entry carries several status lines (D-005, D-019, D-022), the entry's own first status line is shown.
+- **Status** is copied from `DECISIONS.md` as it appears there (statuses as at the last commit touching that file, `87c8f0f`). It is never upgraded here. Where an entry carries several status lines (D-005, D-019, D-022), the entry's own first status line is shown.
 - **Results are file paths**, not retyped numbers. A number appears here only where it is needed to say what a result cannot show, and then with its source path.
 - **"not recorded in the repo"** means the repo (`DECISIONS.md`, the git log, `evaluation/`, `validation/`) does not say. Nothing is reconstructed or guessed; every such item is also listed in the gaps table at the end so it can be filled in from memory.
 - **Failures and negative results are recorded**, not only successes. A result that did not come from a real run is never recorded. A citation that was not checked is marked unverified.
@@ -19,13 +19,13 @@ Working notes for the dissertation write-up: one section per topic, one referenc
 | C. Person detection and single-climber tracking | D-024 |
 | D. Camera assumption, scale calibration and depth | D-008, D-013, D-021 |
 | E. Occlusion and gap handling | D-007 |
-| F. Centre of mass | D-005 |
+| F. Centre of mass | D-005, D-025 |
 | G. Smoothness metric | D-006 |
 | H. Four-state classifier and thresholds | D-003, D-004, D-015 |
 | I. Hold detection and colour calibration | D-009, D-017, D-017a, D-022 |
 | J. Hold-relative analysis and attempt comparison | D-018, D-019, D-020 |
 
-D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitivity check) is not committed yet; it will be added to topic F once it is. D-024 (tracking failure) is in topic C; the tracking fix will be an addendum or a later ID.
+D-025 (the full 14-joint segment-model CoM is not adopted as it stands; the trunk-centroid proxy remains the working CoM) is in topic F. D-024 (tracking failure) is in topic C; the tracking fix will be an addendum or a later ID.
 
 ---
 
@@ -175,20 +175,29 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 | ID | Title | Status as in `DECISIONS.md` |
 |---|---|---|
 | D-005 | Whole-body CoM as primary tracked quantity | proposed _(+2 addendum status line(s) in the file)_ |
+| D-025 | Full 14-joint segment-model CoM not adopted as it stands | decided |
 
-**Question:** _to be filled in part 2._
+**Question:** What whole-body quantity should stand in as the climber's centre of mass (CoM) for velocity, smoothness and balance metrics, given 2D COCO-17 keypoints? D-005 makes the CoM the primary tracked quantity and left the weighting open; the follow-ups and D-025 record the options built and the decision on them.
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. 2026-07-27, D-005: CoM as the primary tracked quantity, weighting TBD (first in git in `5181280`). `ARCHITECTURE.md` §4.3 allowed a simplified proxy if its exact weights were logged.
+2. 2026-10-28, `f744622`: `metrics.py` with per-joint velocity and cumulative displacement and tests.
+3. 2026-10-28, `c8e1f2b` and `68bafe0`: trunk-centroid proxy (equal weights on both shoulders and both hips), logged in a D-005 follow-up as the CoM "until a cited segment-mass table is chosen" (repo wording). [From author's notes, to verify: built first as a stopgap.] It omits the head because the nose had 4 gap events on the five clips against 0 for the four trunk joints (D-005 follow-up).
+4. 2026-10-28, `4c576a2` and `81703a6`: review script `evaluation/2.2/report_metrics.py`, producing an overlay video, plots and per-clip CSVs (velocity, displacement, steps skipped) for the five whole clips. [From author's notes, to verify: the overlays showed the proxy sitting mid-torso and stable, and the speed peaks (IMG_2419 jump-down, IMG_2420 swing across a hold, IMG_2412 step-up) were reviewed as real movement.] The repo holds the files, not the review.
+5. 2026-10-28, literature checked in chat by Claude via web search (register rows R5, R6, R26 to R29); [from author's notes, to verify: no source was found for a blended trunk-plus-limb estimator, so it would be this project's own design]. Register entries: `c00c508`, `b1459c9`.
+6. 2026-10-28, `1ba4080`, `34ecb51`, `3739954`, `1f618d1`: de Leva (1996) Table 4 chosen for a 14-joint segment model (values read from the PDF and checked against a secondary file; all matched, as recorded in the D-005 follow-up), implemented in `metrics.py` next to the proxy and compared with it on the same clips: position difference, constant offset against time-varying part, speed correlation, ten largest speed differences. Overlay clips for those ten (`cb1f32c`, `8c258ad`, `a9b1c5b`) and a per-frame table for IMG_2420 frames 68-84 (`9b46484`).
+7. 2026-10-28, `87c8f0f`: the author's review of the ten clips led to D-025: the segment model is not adopted as it stands; the proxy remains the working CoM; the final choice is a later entry.
+8. [From author's notes, to verify: the next step is a comparison of candidates in step 2.2c (a fitted trunk point, a head-free reduced model, a legs-and-trunk model and a blended model), repeated after gap filling and smoothing. D-025 names the step and the revisit condition but not the four candidates.] The classifier does not use the CoM: `ARCHITECTURE.md` §4.4 defines its pelvis proxy as the hip midpoint [author's notes: to verify].
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** Five whole own clips, 5,886 frames. Proxy defined on 5,828 frames (99.0%); segment model on 5,349 (90.9%); compared only where both are defined (5,349), with 479 proxy-only frames not compared. 5,201 consecutive-frame speed pairs. Male table (the author's statement that the current footage is male; per-clip sex: not recorded in the repo). The ten largest speed differences were selected as the largest disagreements.
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** `evaluation/2.2/output_full/summary.csv` and `<clip>/joint_metrics.csv` (proxy review); `evaluation/2.2b/output_full/summary.csv`, `top_speed_differences.csv`, `<clip>/frames.csv`, `IMG_2420_frames_68-84.csv` with its manifest, `manifest.txt`, `overlay_clips_manifest.txt` (comparison); overlay videos and plots are gitignored (`evaluation/2.2/**`, `evaluation/2.2b/overlays/`). D-005 follow-ups and D-025 in `DECISIONS.md`.
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-005 proposed (all three status lines). D-025 decided: the full 14-joint segment model is not adopted as it stands, the trunk-centroid proxy remains the working CoM, and a later entry (D-026) will make the final choice. "decided" is the status word used in D-025; it is not one of the four in the `DECISIONS.md` template.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** There is no ground-truth CoM, so neither estimator is validated. The D-025 labels (jitter or dropouts in six of the ten, real leg-driven movement in three, one unlabelled) are the author's visual judgement on ten steps chosen as the largest disagreements, not an error rate. Problems cluster in IMG_2420. The proxy cannot show slow leg-driven shifts. Everything is raw, unsmoothed and not gap-filled, and the sex table is an assumption. The LDLJ difference between the two estimators has not been computed. The reviewed overlays are not in the repo.
 
-**References:** register rows R2, R4, R5, R6, R7, R19.
+**References:** register rows R2, R4, R5, R6, R7, R19, R26, R27, R28, R29.
 
 ## G. Smoothness metric
 
@@ -198,17 +207,22 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 |---|---|---|
 | D-006 | Smoothness metric — Log Dimensionless Jerk (LDLJ) | implemented (formula, secondary-source verified) — primary-source identity confirmed; primary-source formula text unread due to access barriers, not treated as a blocker given the existing secondary verification. |
 
-**Question:** _to be filled in part 2._
+**Question:** Which movement-smoothness metric should be reported, and is the formula right? D-006 adopts log dimensionless jerk (LDLJ), applied to CoM velocity.
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. 2026-07-27, D-006 (`5181280`): LDLJ with the formula written in the entry; later "formula verified" 2026-07-27 by secondary sources (the Gulde & Hermsdörfer corrigendum and a comparison study that used Balasubramanian's code).
+2. 2026-10-04: primary-source identity confirmed (Balasubramanian et al. 2015, via the Imperial Spiral record); the formula text in the primary PDF could not be read (access barriers). First in git in `6f1eb27` (2026-10-07).
+3. 2026-10-28, `8870e73`: the entry's description of the corrigendum was corrected (it amends Gulde & Hermsdörfer's own article, not Balasubramanian's); the corrigendum's exact corrected form is unconfirmed, and the (t2 - t1)^3 form rests on the author's own dimension check.
+4. 2026-10-28, web check by Claude in chat: the comparison study is Bayle et al. (2023), which used Balasubramanian's Python code for LDLJ and SPARC (register R10).
+5. No LDLJ computation exists in the repo. The only mentions of LDLJ in the code are the placeholder column `ldlj_difference` ("n/a") in the 2.2b comparison script and its tests.
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** None. No smoothness value has been computed on any clip.
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** None. The only artefacts are the formula and its checks in D-006 and register rows R8 to R10.
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-006 implemented (formula, secondary-source verified), as the file states. I found no LDLJ computation behind that status; it refers to the formula having been checked, not to an implementation.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** Nothing about the data: no smoothness result exists. The formula is not verified against the primary text. The choice of LDLJ over SPARC rests on the entry's rationale, not on a comparison on this footage. How smoothing choices would affect it is open (author's plan step 5.1a; the plan file is not in the repo).
 
 **References:** register rows R8, R9, R10.
 
@@ -222,17 +236,20 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 | D-004 | Threshold and duration values — empirical sweep methodology | proposed — actual swept values to be logged as sub-entries once footage is available (e.g. D-004a for the four-state z-score threshold, D-004b for hysteresis duration). |
 | D-015 | Known-groups validation as a supplementary check for threshold selection | proposed — not required for the core pipeline (`ARCHITECTURE.md` §1–§6); required as a prerequisite check before `threshold_z` (D-004) is finalised. |
 
-**Question:** _to be filled in part 2._
+**Question:** How can per-joint moving/static states be classified into the four Boulanger-derived states without ground truth, and how are the thresholds chosen? D-003 adopts z-score thresholding on joint velocity; D-004 says all thresholds are swept on real footage against the author's judgement; D-015 adds a known-groups check.
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. 2026-07-27, D-003 and D-004 (`5181280`).
+2. 2026-10-04: D-003 addendum, Beltrán et al.'s method confirmed from their methodology text (Section 4.5, Eq. 9) and a possible refinement noted (comparison against 50% of the peak); first in git in `6f1eb27` (2026-10-07). D-015 (known-groups validation), reconstructed from `ARCHITECTURE.md` §7 because that section already referenced it (`e7140a7`, 2026-10-04).
+3. Nothing has been run: there is no `state_classifier.py`, no threshold sweep and no known-groups check in the repo.
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** None. Climber experience level per clip, needed for the known-groups check: not recorded in the repo.
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** None.
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-003 proposed; D-004 proposed (the planned sub-entries D-004a and D-004b were never written); D-015 proposed. Statuses as in the table above.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** Nothing about classification quality: no states have been computed, no threshold chosen, no known-groups result obtained. D-015 itself states the Hold Interaction state is only an approximate proxy for the exploratory/performatory distinction, with no validated mapping.
 
 **References:** register rows R1, R2, R3, R17, R20.
 
@@ -247,17 +264,22 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 | D-017a | Gym colour→grade mapping — partially supplied (grade bands known, HSV calibration still pending) | proposed — grade-band mapping implemented; HSV calibration outstanding, blocking real (non-"unassigned") colour-matching output. |
 | D-022 | Hold detector model — YOLOv8n-seg instance segmentation with polygon labels, three classes | proposed _(+3 addendum status line(s) in the file)_ |
 
-**Question:** _to be filled in part 2._
+**Question:** Can holds be localised and assigned to routes (by colour) with a gym-specific detector, and what model type and class set should it use? D-009 first ruled hold detection out; D-017 reversed that; D-022 changed the model to instance segmentation with three classes.
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. 2026-07-27, D-009 (`5181280`): hold detection out of scope (annotation cost, generalisation), from three sources (R12, R13, R1).
+2. 2026-10-04, `9983bbe`: D-017 reverses D-009 (fine-tuned YOLOv8n box detector plus HSV colour matching) after the author authorised starting implementation; D-017a records the gym's colour-to-grade bands (the author's knowledge). `hold_detection.py`, `hold_colours_config.py`, `training/train_hold_detector.py` and `training/calibrate_hold_colours.py` were added.
+3. 2026-10-21, `7974bea`, `d96fcf4`, `c7e8254`: D-022 switches to YOLOv8n-seg with polygon labels and three classes (`hold`, `descent_hold`, `volume`); the code was rewritten for segmentation, and mask and eroded-mask pixel counts were added per detection.
+4. 2026-10-28, `2b09949`: two D-022 addenda (cut-off holds are annotated; overlapping polygons, smallest polygon wins, to be checked at task 0.5.7).
+5. No detector has been trained: no checkpoint, annotated dataset or training run is in the repo.
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** None for results. Number of annotated images, annotations per class, Roboflow project details, and the number of sample photos per colour for HSV calibration: not recorded in the repo. D-022 says the code was verified only against synthetic or hand-written polygon fixtures; those fixtures are not recorded in the repo (no hold-detection tests are in `tests/`).
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** None. `hold_colours_config.py` holds the grade bands (D-017a); the HSV reference is still `None`, so colour matching returns "unassigned". `DEFAULT_MASK_ERODE_PX` is an unvalidated placeholder (D-022 addendum).
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-009 superseded (by D-017); D-017 proposed; D-017a proposed (grade bands implemented, HSV calibration outstanding); D-022 proposed. Statuses as in the table above. The planned sub-entries D-017b and D-017c were never written.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** No detection accuracy, colour-matching accuracy or generalisation figure exists: nothing has been trained or run on real footage. The detector will be gym-specific by design (D-017 limitation 1). Whether YOLOv8n-seg is accurate enough on this gym's holds, and whether background holds will be detected, are open questions in D-022.
 
 **References:** register rows R1, R12, R13, R25.
 
@@ -271,17 +293,20 @@ D-025 (centre of mass: trunk-centroid proxy primary, segment model as a sensitiv
 | D-019 | Route auto-definition and route progress | proposed — blocked on D-018's dependencies. See 2026-10-21 addendum below (route-membership/start/finish/progress wording updated for the three-class segmentation detector, D-022). _(+1 addendum status line(s) in the file)_ |
 | D-020 | Per-move attempt-to-attempt comparison by hold sequence — stretch goal; layout matching proposed as the D-013 resolution | proposed — stretch, after the core pipeline and D-018/D-019 features work. |
 
-**Question:** _to be filled in part 2._
+**Question:** Can the climb be analysed relative to the holds: a keypoint-to-hold contact timeline, hold-to-hold segmentation of the metrics, timing, foot and balance measures, route definition and progress (D-018, D-019), and per-move comparison of attempts (D-020, a stretch goal)?
 
-**What was tried, in order (dates and commit hashes):** _to be filled in part 2._
+**What was tried, in order (dates and commit hashes):** 
+1. 2026-10-07, `6f1eb27`: D-018, D-019 and D-020 logged. D-018 states the build is blocked on the four-state classifier and on the trained, colour-calibrated hold detector.
+2. 2026-10-21, `7974bea`: D-019's route-definition wording updated for the three-class segmentation detector.
+3. Nothing is built: there is no `hold_contact.py`, contact timeline or route logic in the repo.
 
-**Data and sample sizes:** _to be filled in part 2._
+**Data and sample sizes:** None.
 
-**Results (file paths):** _to be filled in part 2._
+**Results (file paths):** None.
 
-**Decision and status:** _to be filled in part 2 (IDs and statuses as above)._
+**Decision and status:** D-018 proposed (build blocked); D-019 proposed (blocked on D-018's dependencies); D-020 proposed (stretch). Statuses as in the table above.
 
-**What it cannot show:** _to be filled in part 2._
+**What it cannot show:** Nothing: no result exists. The entries list their own risks (hold IDs depending on the layout merge, wrist and ankle keypoints not being contact points, foot readjustment and the balance proxy having no literature source). The 2026 preprint cited in D-018 (R16) and the fluency paper (R15) are not checked against their bodies.
 
 **References:** register rows R1, R2, R15, R16.
 
@@ -345,7 +370,7 @@ Groups of register rows, for the related-work chapter. The "how this project dif
 
 ## Gaps table
 
-Things the repo does not record, to be filled in from memory. Part 2 adds the gaps found in each topic section.
+Things the repo does not record, to be filled in from memory. Rows 1 to 13 come from the register and the dangling IDs; rows 14 to 27 were found while filling the topic sections.
 
 | # | Topic | Item | What is missing | Where I looked |
 |---|---|---|---|---|
@@ -362,7 +387,21 @@ Things the repo does not record, to be filled in from memory. Part 2 adds the ga
 | 11 | B / I | R25 | YOLOv8 (Ultralytics) citation details, Roboflow Smart Select and the HSV colour space have no checked source. | register R25 |
 | 12 | F | R26–R28 | Volume, pages and DOI of R26, the title of R27, and the authors of R28 are not recorded; what each shows for the CoM work is not recorded. | register |
 | 13 | G | D-006 / R10 | D-006 still cites the comparison study without authors or title; the register now records Bayle et al. (2023). D-006 not edited. | register R10 |
+| 14 | A | D-001 | The text of the supervisor's original "manual labelling" comment, and whether or when it was answered. | `DECISIONS.md`, `PROPOSAL.md`, git log |
+| 15 | B | D-002a / footage | Recording device, resolution, climber, route and grade for each of the five clips, and why these five were chosen. Only the file names are recorded. | `DECISIONS.md`, `validation/`, `evaluation/` |
+| 16 | B | D-016 | The MediaPipe foot-keypoint exploration was a scratchpad-only script (not committed). Its numbers are in D-016 only; the script and its raw output are not in the repo. | `DECISIONS.md`, git log |
+| 17 | B | D-002a | The hardware or device that ran the 2026-10-04 validation. The summary records processing seconds but not the device. | `validation/output/summary.csv` |
+| 18 | C | D-024 | Per-clip counts of frames with more than one person box (only in the gitignored keypoint CSVs), and the images, notes and re-run script behind the spot checks (IMG_2419 frame 605, IMG_2420 frames 1850 and 2390, IMG_2419 detector re-runs). | `DECISIONS.md`, `validation/frame_exclusions.csv` |
+| 19 | D | D-008 | Whether the author's footage was filmed on a tripod or otherwise fixed, and the camera's angle to the wall. The assumption is stated, not measured. | `DECISIONS.md`, `PROPOSAL.md` |
+| 20 | D | D-021 | The spike's code and report exist only on branch `spike/blazepose-z` (`cdf40f2`), not on `main`, and cannot be reproduced from a clean clone (its README says so). | git log, branch list |
+| 21 | E | D-007 | The hide-and-fill test and `occlusion_handling.py` (gap filling) do not exist. The first version of the gap script was never committed, so no commit records its early counting error. | git log, `validation/`, `evaluation/3.1/` |
+| 22 | F | D-005 / D-025 | What the author saw in each of the ten reviewed overlay clips (only the counts and rank numbers are in D-025), and the author's review of the proxy overlays (mid-torso, stable; speed peaks real). The reviewed videos are gitignored. The sex of each climber (only "the current footage is male", the author's statement). | `DECISIONS.md` D-025, `evaluation/2.2b/` |
+| 23 | F | step 2.2c | The four candidate estimators (fitted trunk point, head-free reduced model, legs-and-trunk model, blended model) and the statement that no source exists for a blended estimator are the author's notes, not recorded in the repo (D-025 names the step and the revisit condition only). | `DECISIONS.md`, `evaluation/`, register |
+| 24 | G | D-006 | No LDLJ computation exists although the status line says "implemented (formula, secondary-source verified)". The primary-source formula text was never read. | `DECISIONS.md`, `*.py` |
+| 25 | H | D-003 / D-004 / D-015 | Climber experience level per clip (the input of the known-groups check). Nothing was run. | `DECISIONS.md`, `ARCHITECTURE.md` §7 |
+| 26 | I | D-017 / D-017a / D-022 | Annotated image and annotation counts, class counts, Roboflow project details, training runs, and sample photos per colour for HSV calibration. The synthetic fixtures D-022 says it was checked against are not in the repo (no hold-detection tests in `tests/`). | `DECISIONS.md`, `training/`, `tests/`, git log |
+| 27 | all | plan labels | Step and task labels used in the entries (0.5.x, 2.2c, 3.2, 5.1a, D-026) come from the author's plan file, which is not in the repo (D-020 cites `PROJECT_PLAN.md` 7.2). | `DECISIONS.md` |
 
-Pending, not a gap: D-025 (centre of mass: proxy primary, segment model as a sensitivity check) is not committed yet and will be added to topic F once it is.
+D-025 is committed (`87c8f0f`) and listed in topic F. Its status word "decided" is not one of the four in the `DECISIONS.md` template (proposed, implemented, validated, superseded); it is recorded as written.
 
 Citation caveats are listed in the register (rows marked FLAG), not repeated here.
