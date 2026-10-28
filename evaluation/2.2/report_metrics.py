@@ -42,11 +42,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from metrics import (  # noqa: E402
+    GAP_EXCLUDED,
     GAP_LOW_CONFIDENCE,
     GAP_MISSING_DETECTION,
     GAP_UNSPECIFIED,
     TRUNK_CENTROID_PROXY_WEIGHTS,
     JointSeries,
+    apply_frame_exclusions,
     compute_com,
     compute_displacement,
     compute_velocity,
@@ -54,7 +56,8 @@ from metrics import (  # noqa: E402
 )
 from validation.analyze_occlusion_gaps import COCO17_NAMES, load_exclusions  # noqa: E402
 
-EXCLUDED = "excluded_by_list"
+EXCLUDED = GAP_EXCLUDED
+apply_exclusions = apply_frame_exclusions  # shared with the 2.2b comparison (metrics.py)
 # why a frame has no CoM, in priority order (a listed exclusion wins over a drop)
 REASON_LABELS = {
     EXCLUDED: "excluded_by_list",
@@ -80,18 +83,6 @@ class ClipResult:
     com: JointSeries
     com_reasons: list[str | None]   # None where CoM exists, else a REASON_LABELS key
     excluded_frames: set[int]
-
-
-def apply_exclusions(joints: dict[str, JointSeries], excluded: set[int]) -> dict[str, JointSeries]:
-    """Copy of the series with excluded frames set to None (reason EXCLUDED)."""
-    out = {}
-    for name, s in joints.items():
-        pos, rs = list(s.positions), list(s.gap_reasons)
-        for f in excluded:
-            if 0 <= f < len(pos):
-                pos[f], rs[f] = None, EXCLUDED
-        out[name] = JointSeries(name, pos, s.timestamps, rs)
-    return out
 
 
 def com_missing_reason(joints: dict[str, JointSeries], t: int) -> str:

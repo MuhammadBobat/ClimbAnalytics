@@ -44,6 +44,9 @@ OCCLUSION_CONFIDENCE_THRESHOLD = 0.5
 GAP_MISSING_DETECTION = "missing_detection"
 GAP_LOW_CONFIDENCE = "low_confidence"
 GAP_UNSPECIFIED = "unspecified"  # series built by hand without a reason
+# Frames removed by a listed exclusion (e.g. a wrong-person lock, D-024); set by
+# apply_frame_exclusions, never by the loader.
+GAP_EXCLUDED = "excluded_by_list"
 
 
 @dataclass
@@ -91,6 +94,29 @@ def count_gap_frames(series: JointSeries) -> GapCounts:
         low_confidence=sum(1 for r in reasons if r == GAP_LOW_CONFIDENCE),
         unspecified=sum(1 for r in reasons if r == GAP_UNSPECIFIED),
     )
+
+
+def apply_frame_exclusions(
+    joints: dict[str, JointSeries], excluded: set[int]
+) -> dict[str, JointSeries]:
+    """Copy of every series with the excluded frames set to None (reason GAP_EXCLUDED).
+    The input series are not modified."""
+    out = {}
+    for name, s in joints.items():
+        pos, rs = list(s.positions), list(s.gap_reasons)
+        for f in excluded:
+            if 0 <= f < len(pos):
+                pos[f], rs[f] = None, GAP_EXCLUDED
+        out[name] = JointSeries(name, pos, s.timestamps, rs)
+    return out
+
+
+def _combined_gap_reason(causes: set) -> str:
+    """Why a value derived from several joints is None, most informative cause first."""
+    for r in (GAP_EXCLUDED, GAP_MISSING_DETECTION, GAP_LOW_CONFIDENCE):
+        if r in causes:
+            return r
+    return GAP_UNSPECIFIED
 
 
 @dataclass
@@ -278,12 +304,7 @@ def compute_com(
         if any(p is None for p in pts):
             positions.append(None)
             causes = {j.gap_reasons[t] for j in used if j.positions[t] is None}
-            # a dropped frame (no person) dominates a single low-confidence joint
-            reasons.append(
-                GAP_MISSING_DETECTION if GAP_MISSING_DETECTION in causes
-                else GAP_LOW_CONFIDENCE if GAP_LOW_CONFIDENCE in causes
-                else GAP_UNSPECIFIED
-            )
+            reasons.append(_combined_gap_reason(causes))
             continue
         x = sum(weights[name] * p[0] for name, p in zip(weights, pts)) / w_total
         y = sum(weights[name] * p[1] for name, p in zip(weights, pts)) / w_total
@@ -293,6 +314,154 @@ def compute_com(
         joint_name="com_trunk_centroid_proxy", positions=positions,
         timestamps=list(used[0].timestamps), gap_reasons=reasons,
     )
+
+
+# --- Segment-model CoM (de Leva 1996, DECISIONS.md D-005 follow-up) ---------------------
+#
+# Whole-body CoM from 14 body segments, next to the trunk-centroid proxy above (which
+# stays as the baseline). Source: de Leva, P. (1996), "Adjustments to Zatsiorsky-
+# Seluyanov's segment inertia parameters", J Biomech 29(9):1223-1230, Table 4 (p. 1228):
+# segment mass as a fraction of body mass and CM position as a fraction of segment
+# length from the proximal end, male and female. Values read from the PDF and checked
+# against a secondary data file (all matched); stored here as percent / 100.
+#
+# Segment endpoints use the COCO-17 keypoints as stand-ins for joint centres (not
+# measured to be equal); trunk = MIDS-MIDH row (mid-shoulder-joint to mid-hip-joint),
+# shank = KJC-AJC row. Head mass sits at the ear midpoint (the paper's head endpoints,
+# vertex and mid-gonion, are not in COCO-17); hand and foot mass sit at the wrist and
+# ankle keypoints, so their offset CMs are neglected. 2D pixel space (D-008, D-013).
+# A segment needs all of its joints: any gap makes the CoM None (no renormalisation).
+
+SEX_TABLES = ("male", "female", "mean")
+
+# {sex: {segment: mass_fraction | (mass_fraction, cm_fraction_from_proximal_end)}}
+_DE_LEVA_1996_TABLE_4 = {
+    "male": {
+        "head": 0.0694, "trunk": (0.4346, 0.4310), "upper_arm": (0.0271, 0.5772),
+        "forearm": (0.0162, 0.4574), "hand": 0.0061, "thigh": (0.1416, 0.4095),
+        "shank": (0.0433, 0.4395), "foot": 0.0137,
+    },
+    "female": {
+        "head": 0.0668, "trunk": (0.4257, 0.3782), "upper_arm": (0.0255, 0.5754),
+        "forearm": (0.0138, 0.4559), "hand": 0.0056, "thigh": (0.1478, 0.3612),
+        "shank": (0.0481, 0.4352), "foot": 0.0129,
+    },
+}
+
+
+@dataclass(frozen=True)
+class SegmentSpec:
+    """One body segment. `proximal` / `distal` are joint names; two names mean their
+    midpoint. distal=None means a point mass at `proximal` (cm_fraction must be None)."""
+    name: str
+    mass_fraction: float
+    proximal: tuple[str, ...]
+    distal: tuple[str, ...] | None = None
+    cm_fraction: float | None = None
+
+    def __post_init__(self) -> None:
+        if (self.distal is None) != (self.cm_fraction is None):
+            raise ValueError(f"{self.name}: distal and cm_fraction must be given together")
+
+    @property
+    def joints(self) -> tuple[str, ...]:
+        return self.proximal + (self.distal or ())
+
+
+def _sex_params(sex: str) -> dict:
+    if sex not in SEX_TABLES:
+        raise ValueError(f"sex must be one of {SEX_TABLES}, got {sex!r}")
+    if sex != "mean":
+        return _DE_LEVA_1996_TABLE_4[sex]
+    m, f = _DE_LEVA_1996_TABLE_4["male"], _DE_LEVA_1996_TABLE_4["female"]
+    out = {}
+    for seg in m:  # unweighted mean of the two tables: a logged approximation
+        if isinstance(m[seg], tuple):
+            out[seg] = tuple((a + b) / 2 for a, b in zip(m[seg], f[seg]))
+        else:
+            out[seg] = (m[seg] + f[seg]) / 2
+    return out
+
+
+def segment_model_specs(sex: str) -> list[SegmentSpec]:
+    """The 14 segments (head, trunk, and left/right arm, forearm, hand, thigh, shank, foot)."""
+    p = _sex_params(sex)
+    specs = [
+        SegmentSpec("head", p["head"], ("left_ear", "right_ear")),
+        SegmentSpec("trunk", p["trunk"][0], ("left_shoulder", "right_shoulder"),
+                    ("left_hip", "right_hip"), p["trunk"][1]),
+    ]
+    for side in ("left", "right"):
+        j = lambda n: (f"{side}_{n}",)  # noqa: E731
+        specs += [
+            SegmentSpec(f"{side}_upper_arm", p["upper_arm"][0], j("shoulder"), j("elbow"), p["upper_arm"][1]),
+            SegmentSpec(f"{side}_forearm", p["forearm"][0], j("elbow"), j("wrist"), p["forearm"][1]),
+            SegmentSpec(f"{side}_hand", p["hand"], j("wrist")),
+            SegmentSpec(f"{side}_thigh", p["thigh"][0], j("hip"), j("knee"), p["thigh"][1]),
+            SegmentSpec(f"{side}_shank", p["shank"][0], j("knee"), j("ankle"), p["shank"][1]),
+            SegmentSpec(f"{side}_foot", p["foot"], j("ankle")),
+        ]
+    return specs
+
+
+def segment_model_joints(sex: str = "male") -> list[str]:
+    """Every joint the segment model needs (the same for all sex tables): 14 of 17."""
+    return sorted({j for s in segment_model_specs(sex) for j in s.joints})
+
+
+def _point(joints: dict[str, JointSeries], names: tuple[str, ...], t: int) -> tuple[float, float]:
+    pts = [joints[n].positions[t] for n in names]
+    return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+
+
+def compute_com_from_segments(
+    joints: dict[str, JointSeries], specs: list[SegmentSpec], name: str = "com_segment_model"
+) -> JointSeries:
+    """CoM(t) = Σ m_s · CM_s(t) / Σ m_s, with CM_s = P_prox + r_s (P_dist − P_prox) for a
+    segment with two endpoints and CM_s = P_prox for a point mass. None whenever any
+    joint of any segment is a gap at t (no renormalisation), with the gap cause kept."""
+    needed = sorted({j for s in specs for j in s.joints})
+    missing = [j for j in needed if j not in joints]
+    if missing:
+        raise KeyError(f"joints not in series: {missing}")
+    total_mass = sum(s.mass_fraction for s in specs)
+    if total_mass <= 0:
+        raise ValueError("segment masses must sum to a positive value")
+    series = [joints[j] for j in needed]
+    n = len(series[0].positions)
+    if any(len(s.positions) != n for s in series):
+        raise ValueError("all joints must have the same length")
+
+    positions: list[tuple[float, float] | None] = []
+    reasons: list[str | None] = []
+    for t in range(n):
+        if any(joints[j].positions[t] is None for j in needed):
+            positions.append(None)
+            reasons.append(_combined_gap_reason(
+                {joints[j].gap_reasons[t] for j in needed if joints[j].positions[t] is None}))
+            continue
+        x = y = 0.0
+        for s in specs:
+            prox = _point(joints, s.proximal, t)
+            if s.distal is None:
+                cm = prox
+            else:
+                dist = _point(joints, s.distal, t)
+                cm = (prox[0] + s.cm_fraction * (dist[0] - prox[0]),
+                      prox[1] + s.cm_fraction * (dist[1] - prox[1]))
+            x += s.mass_fraction * cm[0]
+            y += s.mass_fraction * cm[1]
+        positions.append((x / total_mass, y / total_mass))
+        reasons.append(None)
+    return JointSeries(name, positions, list(series[0].timestamps), reasons)
+
+
+def compute_com_segment_model(joints: dict[str, JointSeries], sex: str) -> JointSeries:
+    """Whole-body segment-model CoM, de Leva (1996) Table 4. `sex` is required:
+    "male", "female", or "mean" (unweighted average of the two tables, a logged
+    approximation — sensitivity checks only). See the block comment above."""
+    return compute_com_from_segments(
+        joints, segment_model_specs(sex), name=f"com_segment_model_de_leva_1996_{sex}")
 
 
 def _demo(path: Path) -> None:
