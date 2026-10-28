@@ -58,6 +58,7 @@ Zero frames across all five clips tripped the script's own low-confidence/many-l
 
 **Limitations — explicitly not covered by this entry:**
 - Only the first 100 frames of 5 of the 6 available clips were tested (a few seconds each), not full climbs. One full-clip run exists (`Indoor_Bouldering_V3_Rock_Spot.mp4`, from 2026-08-02) but hasn't been reviewed against this same confidence/missing-detection lens yet.
+  - **Note (2026-10-28):** the full-clip run mentioned above is not the author's footage and is excluded from all later analysis. The original text above is left as written.
 - No ground-truth comparison against MediaPipe or YOLOv8-pose was performed on own footage — see decision text above. If quantitative pose evaluation is ever promoted out of D-010's deferred status, that comparison should be redone then, not retrofitted from this entry.
 - Single occlusion event reviewed in detail; no systematic sweep yet of occlusion types (hand behind torso vs. behind head vs. climber facing away) across clips.
 **Source(s):** direct output of `validation/validate_vitpose.py` against 5 own-gym clips, 2026-10-04 (`validation/output/summary.csv`, `*_flags.csv`, `*_keypoints.csv`); visual inspection of `IMG_2412_overlay.mp4` by the author.
