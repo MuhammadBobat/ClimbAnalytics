@@ -132,7 +132,10 @@ def draw_frame(frame, c: "cm.ClipComparison", raw, t: int, sex: str, speeds: tup
             x, y, R = int(pos[0]), int(pos[1]), int(14 * scale) + 5
             cv2.circle(frame, (x, y), R, col, -1)
             cv2.circle(frame, (x, y), R + 3, (0, 0, 0), max(1, thick - 1))
-            cv2.putText(frame, label, (x + R + 8, y + dy * R), cv2.FONT_HERSHEY_SIMPLEX, font * 0.8, col, thick)
+            # proxy label goes left of its marker, segment label right, so close markers stay readable
+            tw = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font * 0.8, thick)[0][0]
+            tx = x - R - 8 - tw if dy < 0 else x + R + 8
+            cv2.putText(frame, label, (tx, y + dy * R), cv2.FONT_HERSHEY_SIMPLEX, font * 0.8, col, thick)
 
     if banner:
         text, colour = banner
