@@ -1,0 +1,38 @@
+Overlay clips manifest (evaluation/2.2b/make_overlay_clips.py)
+date: 2026-10-28
+input folder: validation/output_full
+windows from: evaluation/2.2b/output_full/top_speed_differences.csv sha256 dbe358ca8128f2f0466675dcc41336777dd490d6440044c43520d980d7e5f53a
+segment-model sex table: male
+padding: 15 frames each side (clamped at clip edges); full source resolution
+colours: proxy CoM magenta, segment-model CoM cyan; joint colour by confidence (green >= 0.7, orange 0.5-0.7, red X < 0.5)
+
+== Frame exclusion file
+path: validation/frame_exclusions.csv
+contents (verbatim):
+# Frames excluded from gap statistics (analyze_occlusion_gaps.py --exclusions). Not footage edits: the keypoint data is untouched.
+# An excluded frame is treated like a dropped frame for joint-level counts (no observation, runs do not continue across it) but is reported separately.
+# Finding (2026-10-28, from validation/output_full/ and viewed frame 605): the ONLY confirmed wrong-person lock is IMG_2419 frames 597-614. Extra person boxes elsewhere are mostly holds, partial people or duplicate boxes; the chosen box was the climber. IMG_2419 frames 592-596 are a lost climber box (detector drop), not a wrong lock.
+# Mechanism: validate_vitpose.py's select_person_box takes the box nearest the previous centre with no distance limit, so after the climber box dropped out a bystander box was accepted, and the choice then reinforced itself (nearest to the bystander's own last position) until the bystander left the detections. Fix options are in the DECISIONS.md tracking entry (not decided here).
+video,start_frame,end_frame,reason
+IMG_2419.MOV,597,614,wrong-person lock (bystander on the mat); climber box dropped for 592-596 and was available again by frame 605
+
+== Code (at run time)
+git HEAD: 8c258add4662b9869be1c0d99214eeaa396054d0
+metrics/scripts/exclusions modified since HEAD: no
+
+== Source videos
+IMG_2417.MOV: sha256 5c533f0eefe0e4e293eecb496e20d8fbb6fb456051596a8678252d06a3460505
+IMG_2419.MOV: sha256 71ccfbf07f70cf8102398a49870203b491e66e068486cf0b6e732746a0059447
+IMG_2420.MOV: sha256 f78e74baed71e25250a8865e1d22bfe6f713658de951239ee8afabf917b97b37
+
+== Windows (rank, clip, step frames, window frames, clamped, n frames, file, bytes)
+1, IMG_2420.MOV, 79->80, 64-95, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank01_IMG_2420_f64-95.mp4, 2464689
+2, IMG_2420.MOV, 71->72, 56-87, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank02_IMG_2420_f56-87.mp4, 2481110
+3, IMG_2420.MOV, 99->100, 84-115, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank03_IMG_2420_f84-115.mp4, 2441677
+4, IMG_2419.MOV, 182->183, 167-198, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank04_IMG_2419_f167-198.mp4, 2538057
+5, IMG_2419.MOV, 111->112, 96-127, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank05_IMG_2419_f96-127.mp4, 2515440
+6, IMG_2420.MOV, 97->98, 82-113, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank06_IMG_2420_f82-113.mp4, 2439366
+7, IMG_2420.MOV, 57->58, 42-73, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank07_IMG_2420_f42-73.mp4, 2493319
+8, IMG_2417.MOV, 531->532, 516-547, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank08_IMG_2417_f516-547.mp4, 3238239
+9, IMG_2420.MOV, 104->105, 89-120, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank09_IMG_2420_f89-120.mp4, 2358950
+10, IMG_2417.MOV, 58->59, 43-74, clamped: no, 32, evaluation/2.2b/overlays/output_full/rank10_IMG_2417_f43-74.mp4, 3261817
