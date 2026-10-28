@@ -3,8 +3,9 @@ Occlusion-gap statistics — checks D-007 / ARCHITECTURE.md §3's tier boundarie
 against real occlusion events in the Phase 1 validation output.
 
 Standalone: deliberately NOT part of the main pipeline module boundaries in
-ARCHITECTURE.md §5, same category as validate_vitpose.py. Do not import from
-this file elsewhere.
+ARCHITECTURE.md §5, same category as validate_vitpose.py. Pipeline modules must
+not import from this file; evaluation scripts may (evaluation/2.2/report_metrics.py
+reuses load_exclusions and COCO17_NAMES).
 
 ARCHITECTURE.md §3 defines occlusion as a per-joint condition, keyed to a
 per-joint confidence threshold C < 0.5, with three tiers by gap duration:
