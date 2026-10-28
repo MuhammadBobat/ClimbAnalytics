@@ -1,5 +1,6 @@
 """
-Per-joint velocity (ARCHITECTURE.md §4.1) and cumulative displacement (§4.2).
+Per-joint velocity (ARCHITECTURE.md §4.1), cumulative displacement (§4.2) and
+a trunk-centroid CoM PROXY (§4.3, step 2.2).
 
     v_j(t) = || p_j(t) - p_j(t-1) || / Δt         (§4.1)
     D_j    = Σ_t || p_j(t) - p_j(t-1) ||            (§4.2, full clip or a window)
@@ -223,6 +224,77 @@ def compute_cumulative_displacement(
     return compute_displacement(series, start_idx, end_idx).total
 
 
+# --- Centre of mass (ARCHITECTURE.md §4.3, DECISIONS.md D-005) --------------
+#
+# PROXY, NOT a segment-mass model. §4.3 allows a simplified proxy if its exact
+# weights are logged; the weights below are an engineering heuristic with no
+# literature source and are validated only empirically (D-005 follow-up drafted,
+# not yet logged in DECISIONS.md). Equal weight on the four trunk joints is
+# algebraically (hip_midpoint + shoulder_midpoint) / 2. It ignores the head and
+# all limbs, so it is not whole-body CoM and must be called a proxy wherever it
+# is reported. 2D pixel space only (D-008, D-013).
+#
+# The weights table is keyed by COCO-17 joint name so a different table (e.g. a
+# cited anthropometric one) can be passed to compute_com without changing it.
+TRUNK_CENTROID_PROXY_WEIGHTS: dict[str, float] = {
+    "left_shoulder": 1.0,
+    "right_shoulder": 1.0,
+    "left_hip": 1.0,
+    "right_hip": 1.0,
+}
+
+
+def compute_com(
+    joints: dict[str, JointSeries],
+    weights: dict[str, float] = TRUNK_CENTROID_PROXY_WEIGHTS,
+) -> JointSeries:
+    """CoM(t) = Σ_i w_i p_i(t) / Σ_i w_i over the joints named in `weights`
+    (§4.3). With the default table this is the trunk-centroid PROXY.
+
+    Returns a JointSeries (so compute_velocity / compute_displacement apply
+    unchanged). CoM(t) is None whenever ANY weighted joint is a gap at t — no
+    renormalising over the remaining joints, which would make the estimate jump
+    when a joint drops out. D-007's tiers belong to occlusion_handling.py, which
+    does not exist yet, so nothing is filled here.
+    """
+    if not weights:
+        raise ValueError("weights must not be empty")
+    if any(w < 0 for w in weights.values()) or sum(weights.values()) <= 0:
+        raise ValueError("weights must be non-negative with a positive sum")
+    missing = [name for name in weights if name not in joints]
+    if missing:
+        raise KeyError(f"joints not in series: {missing}")
+
+    used = [joints[name] for name in weights]
+    n = len(used[0].positions)
+    if any(len(j.positions) != n for j in used):
+        raise ValueError("all weighted joints must have the same length")
+    w_total = sum(weights.values())
+
+    positions: list[tuple[float, float] | None] = []
+    reasons: list[str | None] = []
+    for t in range(n):
+        pts = [j.positions[t] for j in used]
+        if any(p is None for p in pts):
+            positions.append(None)
+            causes = {j.gap_reasons[t] for j in used if j.positions[t] is None}
+            # a dropped frame (no person) dominates a single low-confidence joint
+            reasons.append(
+                GAP_MISSING_DETECTION if GAP_MISSING_DETECTION in causes
+                else GAP_LOW_CONFIDENCE if GAP_LOW_CONFIDENCE in causes
+                else GAP_UNSPECIFIED
+            )
+            continue
+        x = sum(weights[name] * p[0] for name, p in zip(weights, pts)) / w_total
+        y = sum(weights[name] * p[1] for name, p in zip(weights, pts)) / w_total
+        positions.append((x, y))
+        reasons.append(None)
+    return JointSeries(
+        joint_name="com_trunk_centroid_proxy", positions=positions,
+        timestamps=list(used[0].timestamps), gap_reasons=reasons,
+    )
+
+
 def _demo(path: Path) -> None:
     print(f"metrics.py demo — {path.name}")
     print(
@@ -248,6 +320,15 @@ def _demo(path: Path) -> None:
             f"displacement={disp.total:8.1f}px "
             f"({disp.n_steps_skipped} step(s) skipped for gaps)"
         )
+    com = compute_com(all_series)
+    com_gaps = count_gap_frames(com)
+    com_v = [v for v in compute_velocity(com) if v is not None]
+    print(
+        f"\n  {com.joint_name} (PROXY, not whole-body CoM): "
+        f"dropped_frames={com_gaps.missing_detection} low_conf={com_gaps.low_confidence} "
+        f"mean_v={sum(com_v) / len(com_v) if com_v else float('nan'):.1f}px/s "
+        f"displacement={compute_displacement(com).total:.1f}px"
+    )
 
 
 if __name__ == "__main__":
