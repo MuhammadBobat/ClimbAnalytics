@@ -1,0 +1,50 @@
+CoM model comparison manifest (evaluation/2.2b/compare_com_models.py)
+date: 2026-10-28
+input folder: validation/output_full
+
+== Scope
+The comparison runs ONLY on frames where both models are defined: 5349 of 5886 frames on these 5 clip(s).
+Frames where only the proxy is defined (not compared): 479 (proxy defined on 5828).
+Re-run after the occlusion handling (3.2): it should raise the segment model's coverage.
+LDLJ difference: not available until 5.1 exists (summary.csv column = n/a).
+
+== Analyses (definitions; no interpretation in the files)
+offset: per frame the difference vector (segment minus proxy) is projected on the torso axis (shoulder midpoint -> hip midpoint); offset_along_torso_axis_torso is its mean over the clip in torso lengths (positive = toward the hips); timevarying_* is |d - offset*axis| / torso length per frame (anything across the torso axis is part of it). ALL = frame-weighted mean offset, per-clip offsets removed before pooling.
+speed correlation: Pearson r between proxy speed and segment-model speed over steps where both are defined (empty if fewer than 3 steps or no variance).
+top_speed_differences.csv: the 10 largest |segment speed - proxy speed| steps pooled over clips (primary sex); the 3 lowest-confidence joints (of the 14 used) at each frame of the step.
+
+== Models
+baseline: trunk-centroid proxy, equal weights on shoulders and hips (D-005 follow-up)
+segment model: de Leva (1996), J Biomech 29(9):1223-1230, Table 4 (p. 1228)
+table rows used: head VERT-MIDG (mass only, at ear midpoint); trunk MIDS-MIDH; upper arm SJC-EJC; forearm EJC-WJC; hand WJC-MET3 (mass only, at wrist); thigh HJC-KJC; shank KJC-AJC (alternative-endpoints row); foot HEEL-TTIP (mass only, at ankle)
+required joints (14): left_ankle, left_ear, left_elbow, left_hip, left_knee, left_shoulder, left_wrist, right_ankle, right_ear, right_elbow, right_hip, right_knee, right_shoulder, right_wrist
+sex tables: primary = male; sensitivity = female, mean (mean = unweighted average of the two tables)
+local paper copy (outside the repo): de_leva_1996.pdf sha256 685916ec701cd860ab861b1901e27a90f946199c221b23acedebfb9a7dc72811
+
+== Frame exclusion file
+path: validation/frame_exclusions.csv
+contents (verbatim):
+# Frames excluded from gap statistics (analyze_occlusion_gaps.py --exclusions). Not footage edits: the keypoint data is untouched.
+# An excluded frame is treated like a dropped frame for joint-level counts (no observation, runs do not continue across it) but is reported separately.
+# Finding (2026-10-28, from validation/output_full/ and viewed frame 605): the ONLY confirmed wrong-person lock is IMG_2419 frames 597-614. Extra person boxes elsewhere are mostly holds, partial people or duplicate boxes; the chosen box was the climber. IMG_2419 frames 592-596 are a lost climber box (detector drop), not a wrong lock.
+# Mechanism: validate_vitpose.py's select_person_box takes the box nearest the previous centre with no distance limit, so after the climber box dropped out a bystander box was accepted, and the choice then reinforced itself (nearest to the bystander's own last position) until the bystander left the detections. Fix options are in the DECISIONS.md tracking entry (not decided here).
+video,start_frame,end_frame,reason
+IMG_2419.MOV,597,614,wrong-person lock (bystander on the mat); climber box dropped for 592-596 and was available again by frame 605
+
+== Code and environment (at run time)
+git HEAD: 34ecb519dad2157439253e32c980f7500bbd744d
+metrics/script/exclusions modified since HEAD: no
+torch: 2.11.0
+transformers: 5.14.1
+ultralytics: 8.4.108
+opencv-python: 5.0.0.93
+numpy: 2.2.6
+Pillow: 12.0.0
+huggingface_hub: 1.25.1
+
+== Clips
+IMG_2412.MOV: frames 718, fps 29.987 (from timestamps), sha256 605892b6d1c140a116251c0fbd7b00d653945b4c91ba46fc0a607935216dc82b
+IMG_2416.MOV: frames 917, fps 29.996 (from timestamps), sha256 3af94cce0437f413863f255007c1dad8764c6d24dfa5b6c749a0d49a13de3619
+IMG_2417.MOV: frames 980, fps 29.945 (from timestamps), sha256 5c533f0eefe0e4e293eecb496e20d8fbb6fb456051596a8678252d06a3460505
+IMG_2419.MOV: frames 850, fps 29.997 (from timestamps), sha256 71ccfbf07f70cf8102398a49870203b491e66e068486cf0b6e732746a0059447
+IMG_2420.MOV: frames 2421, fps 29.997 (from timestamps), sha256 f78e74baed71e25250a8865e1d22bfe6f713658de951239ee8afabf917b97b37

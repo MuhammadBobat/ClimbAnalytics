@@ -1,0 +1,11 @@
+rank,clip,frame_from,frame_to,timestamp_to_s,speed_proxy_px_s,speed_segment_px_s,abs_diff_px_s,lowest_conf_joints_frame_from,lowest_conf_joints_frame_to
+1,IMG_2420.MOV,79,80,2.667,47.7562,579.1104,531.3542,left_elbow:0.6848; left_knee:0.6882; right_hip:0.7427,left_knee:0.6103; left_elbow:0.6368; right_hip:0.7511
+2,IMG_2420.MOV,71,72,2.400,302.9713,569.9704,266.9991,left_knee:0.6959; right_hip:0.7619; left_elbow:0.7641,left_knee:0.6515; left_hip:0.6816; right_hip:0.6961
+3,IMG_2420.MOV,99,100,3.334,874.1977,669.0906,205.1071,left_elbow:0.5694; left_knee:0.6507; left_hip:0.7372,left_elbow:0.5232; left_knee:0.7371; left_hip:0.7635
+4,IMG_2419.MOV,182,183,6.101,152.9850,328.7585,175.7734,right_ankle:0.7951; right_knee:0.8679; left_wrist:0.8749,right_ankle:0.6551; right_ear:0.8196; right_knee:0.8209
+5,IMG_2419.MOV,111,112,3.734,108.3641,281.2261,172.8620,left_ear:0.8021; left_hip:0.8608; right_hip:0.8636,right_ankle:0.7057; left_ear:0.7852; left_hip:0.8274
+6,IMG_2420.MOV,97,98,3.267,627.0628,458.5187,168.5441,left_knee:0.5877; left_elbow:0.6376; right_hip:0.7192,left_elbow:0.5888; left_knee:0.6871; right_hip:0.7539
+7,IMG_2420.MOV,57,58,1.934,259.1380,100.6027,158.5353,left_ear:0.6385; left_hip:0.7247; right_hip:0.7458,left_ear:0.6688; right_hip:0.6899; left_hip:0.7080
+8,IMG_2417.MOV,531,532,17.766,527.5115,376.8056,150.7059,left_elbow:0.8398; right_hip:0.8527; left_hip:0.8679,right_hip:0.8338; left_elbow:0.8625; left_hip:0.8812
+9,IMG_2420.MOV,104,105,3.500,751.3492,603.5308,147.8184,left_wrist:0.6794; left_ankle:0.7050; left_hip:0.7566,right_wrist:0.5824; left_wrist:0.5856; left_ankle:0.7441
+10,IMG_2417.MOV,58,59,1.970,142.8879,278.8209,135.9330,left_hip:0.8345; right_ankle:0.8513; right_hip:0.8666,left_ear:0.7940; left_hip:0.8344; right_hip:0.8586
