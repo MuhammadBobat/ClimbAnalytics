@@ -1,0 +1,20 @@
+Frame detail table manifest (evaluation/2.2b/frame_detail_table.py)
+date: 2026-10-28
+clip: IMG_2420, frames 68-84, segment-model sex table: male
+input keypoint CSV: validation/output_full/IMG_2420_keypoints.csv sha256 1200b4ea19b11eaa379b1d6c59e04a6aef7cfae5633a7d51c77762217c8ee73d
+columns: proxy and segment-model CoM (x, y), both speeds (step t-1 -> t), raw hip and shoulder keypoint positions and confidences; an empty cell means undefined. Raw, unsmoothed, no gap-filling.
+
+== Frame exclusion file
+path: validation/frame_exclusions.csv
+contents (verbatim):
+# Frames excluded from gap statistics (analyze_occlusion_gaps.py --exclusions). Not footage edits: the keypoint data is untouched.
+# An excluded frame is treated like a dropped frame for joint-level counts (no observation, runs do not continue across it) but is reported separately.
+# Finding (2026-10-28, from validation/output_full/ and viewed frame 605): the ONLY confirmed wrong-person lock is IMG_2419 frames 597-614. Extra person boxes elsewhere are mostly holds, partial people or duplicate boxes; the chosen box was the climber. IMG_2419 frames 592-596 are a lost climber box (detector drop), not a wrong lock.
+# Mechanism: validate_vitpose.py's select_person_box takes the box nearest the previous centre with no distance limit, so after the climber box dropped out a bystander box was accepted, and the choice then reinforced itself (nearest to the bystander's own last position) until the bystander left the detections. Fix options are in the DECISIONS.md tracking entry (not decided here).
+video,start_frame,end_frame,reason
+IMG_2419.MOV,597,614,wrong-person lock (bystander on the mat); climber box dropped for 592-596 and was available again by frame 605
+
+== Code (at run time)
+git HEAD: 87c8f0f98e3d415ec314ea1c75355c4353d375e7
+files modified since HEAD (metrics.py, this script, compare_com_models.py, make_overlay_clips.py, frame_exclusions.csv): ?? evaluation/2.2b/frame_detail_table.py
+this script's git blob hash: 94346d48ac1344c4e8b980cd169d21b4d4366231
