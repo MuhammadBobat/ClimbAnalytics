@@ -116,6 +116,12 @@ LDLJ = -ln( (t2 - t1)^3 / v_peak^2  ·  ∫_{t1}^{t2} |d²v/dt²|² dt )
 
 **Addendum (2026-10-28):** Cheng et al. (ICCV 2019) support the principle behind confidence-gated gap detection: low-confidence keypoints are treated as missing rather than trusted, and occlusion can persist over many frames. They do not support the specific tier boundaries (<5, 5-20, >20 frames) or the fill methods (spline, Kalman, root-lock), which remain an original design. They fill gaps with a trained temporal network on 3D data, a different method. The boundaries are validated only by the planned hide-and-fill occlusion test.
 
+**Addendum (2026-10-28) — gap statistics on own footage (n = 5 clips):** Source: `validation/analyze_occlusion_gaps.py` on the first 100 frames of each of `IMG_2412`, `IMG_2416`, `IMG_2417`, `IMG_2419` and `IMG_2420` (500 frames in range, 497 with a detection, 8,449 joint observations). An event is a run of consecutive detected frames with joint confidence < 0.5; whole-frame drops are reported separately and excluded from joint counts.
+- Whole-frame drops: 2 events (2 frames in `IMG_2412`, 1 frame in `IMG_2420`).
+- Joint-level events: 29 — 19 under 5 frames, 9 of 5–20 frames, 1 over 20 frames (29 frames, 0.967 s, right ankle, `IMG_2412`, frames 10–38; it does not touch a clip boundary). 5 of the 9 mid-length events touch a clip boundary.
+- By joint: right wrist 7, left knee 6, nose 4, left eye 4, right eye 4, right ankle 3, right ear 1; the other 10 joints had none.
+What this does and does not show: events touching the excerpt boundary are truncated, so their lengths (and the length bins) are lower bounds. Gaps in this sample concentrate in the wrists, knee, ankle and face points, not the trunk (shoulders and hips had none). "Most gaps were short" refers to 19 of 29 under 5 frames, in this sample only. Five 100-frame excerpts, not full climbs, cannot validate the 5 / 20-frame boundaries. A keypoint with confidence >= 0.5 during an occlusion is not detectable by this statistic (see D-002a, frame 64: confidence 0.257 with a smooth, plausible position). Boundary validation remains the planned hide-and-fill test. Status unchanged: proposed.
+
 ## D-008: Camera assumption — perpendicular, fixed
 **Date:** 2026-07-27
 **Decision:** Assume camera mounted exactly perpendicular to the wall plane, fixed position, no pan/tilt/zoom during a clip.
