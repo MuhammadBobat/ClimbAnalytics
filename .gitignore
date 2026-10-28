@@ -241,3 +241,6 @@ experiments/blazepose_z_spike/output/
 # macOS
 .DS_Store
 
+
+# Whole-clip validation outputs (keypoint CSVs, overlay videos); D-002a / D-021 cite validation/output/ separately
+validation/output_full/
