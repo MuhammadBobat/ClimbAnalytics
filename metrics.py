@@ -228,8 +228,8 @@ def compute_cumulative_displacement(
 #
 # PROXY, NOT a segment-mass model. §4.3 allows a simplified proxy if its exact
 # weights are logged; the weights below are an engineering heuristic with no
-# literature source and are validated only empirically (D-005 follow-up drafted,
-# not yet logged in DECISIONS.md). Equal weight on the four trunk joints is
+# literature source and are validated only empirically (logged as the D-005
+# follow-up, 2026-10-28). Equal weight on the four trunk joints is
 # algebraically (hip_midpoint + shoulder_midpoint) / 2. It ignores the head and
 # all limbs, so it is not whole-body CoM and must be called a proxy wherever it
 # is reported. 2D pixel space only (D-008, D-013).

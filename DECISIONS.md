@@ -87,6 +87,14 @@ Zero frames across all five clips tripped the script's own low-confidence/many-l
 **Status:** proposed
 **Follow-up required:** decide and log exact joint-weighting scheme (full anthropometric segment-mass model vs. simplified proxy) once implementation begins — see `ARCHITECTURE.md` §4.3.
 
+**Follow-up (2026-10-28) — CoM weighting scheme: trunk-centroid proxy**
+**Decision:** Until a cited segment-mass table is chosen, CoM is computed as a trunk-centroid PROXY: equal weights (1.0 each) on `left_shoulder`, `right_shoulder`, `left_hip` and `right_hip`, i.e. CoM = (hip midpoint + shoulder midpoint) / 2, in 2D pixel space. Implemented as `metrics.compute_com`, with the weights held in a table (`TRUNK_CENTROID_PROXY_WEIGHTS`) so a different table can replace it. Exact weights: `{left_shoulder: 1.0, right_shoulder: 1.0, left_hip: 1.0, right_hip: 1.0}`. This is a proxy, not whole-body CoM: it ignores the head, arms and legs, so it will not reflect limb-driven CoM shifts, and it must be called a proxy in any write-up.
+**Missing joints:** CoM is `None` at any frame where any of the four joints is a gap (no renormalisation). Gap-filling is left to `occlusion_handling.py` (D-007), not yet built.
+**Rationale:** `ARCHITECTURE.md` §4.3 permits a simplified proxy if its exact weights are logged. §4.3 gives hip midpoint, shoulder midpoint and head as its example proxy; this one omits the head because the nose had 4 gap events (30 low-confidence frames) across the 5 own-footage clips, against 0 for each of the four trunk joints (events = runs of consecutive detected frames with confidence < 0.5, whole-frame drops excluded; recounted directly from `validation/output/*_keypoints.csv` on 2026-10-28), and renormalising over a missing joint makes the estimate jump. The COCO-17 output also has no head-top, neck, pelvis, hand or foot points, and no segment-mass table is cited in this repo, so a full segment model cannot yet be built without inventing numbers.
+**Source(s):** no literature source for these weights — engineering heuristic, validate empirically. (D-005's sources support CoM as the tracked quantity, not this proxy.)
+**Status:** proposed
+**Open:** whether the proxy tracks whole-body motion adequately on own footage is untested. Planned check: compare the proxy to a segment-model CoM with a cited mass table on the same clips, reporting the change in velocity, state fractions and LDLJ.
+
 ## D-006: Smoothness metric — Log Dimensionless Jerk (LDLJ)
 **Date:** 2026-07-27 (formula verified 2026-07-27, superseding the earlier unverified version of this entry)
 **Decision:** Use LDLJ as the primary smoothness metric, applied to CoM velocity as the default signal. Formula:
