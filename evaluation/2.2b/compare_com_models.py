@@ -19,10 +19,20 @@ current footage, per the author); the other two ("female", "mean" = unweighted a
 the two tables, a logged approximation) are sensitivity checks only. A later product would
 take sex as an input.
 
+Three further analyses (numbers only, no interpretation), all on frames where both are defined:
+  (a) the position difference split into a constant offset per clip, measured along the torso
+      axis in torso lengths (positive = toward the hips), and a time-varying part = what is left
+      after removing that offset (its size in torso lengths);
+  (b) the Pearson correlation between the proxy speed series and the segment-model speed
+      series over the steps where both are defined, per clip and pooled;
+  (c) the ten largest speed differences (pooled over clips, primary sex), with the lowest-
+      confidence joints (of the 14 the segment model uses) at the two frames of each step.
+
 Outputs, under evaluation/2.2b/<input-folder-name>/:
     <clip>/frames.csv   per frame: both CoMs, torso length, difference (px and torso lengths)
     <clip>/com_compare.png   (gitignored) CoM x/y and difference in torso lengths vs time
     summary.csv         per clip and sex, plus ALL (pooled), with n
+    top_speed_differences.csv   the ten largest speed differences (analysis c)
     manifest.txt        run provenance
 
 Usage:
@@ -80,6 +90,8 @@ class ClipComparison:
     proxy: JointSeries
     seg: dict[str, JointSeries]     # sex -> segment-model CoM
     torso_px: list[float | None]    # shoulder midpoint -> hip midpoint, where defined
+    torso_axis: list[tuple[float, float] | None]   # that vector (px); its length is torso_px
+    conf: dict[int, dict[str, float]]              # frame -> confidence of the joints the model uses
 
 
 def _mid(a, b):
@@ -90,23 +102,31 @@ def compare_clip(csv_path: Path, excluded: set[int] | None) -> ClipComparison:
     with open(csv_path, newline="") as f:
         clip = next(csv.DictReader(f))["video"]
     joints = load_keypoints_csv(csv_path)
+    needed = set(segment_model_joints())
+    conf: dict[int, dict[str, float]] = {}
+    with open(csv_path, newline="") as f:
+        for r in csv.DictReader(f):
+            if r["keypoint_name"] in needed:
+                conf.setdefault(int(r["frame_idx"]), {})[r["keypoint_name"]] = float(r["confidence"])
     n = len(next(iter(joints.values())).positions)
     exc = {f for f in (excluded or set()) if 0 <= f < n}
     joints = apply_frame_exclusions(joints, exc)
     proxy = compute_com(joints)
     seg = {sex: compute_com_segment_model(joints, sex) for sex in SEX_TABLES}
-    torso = []
+    torso, axis = [], []
     for t in range(n):
         ls, rs = joints["left_shoulder"].positions[t], joints["right_shoulder"].positions[t]
         lh, rh = joints["left_hip"].positions[t], joints["right_hip"].positions[t]
         if None in (ls, rs, lh, rh):
             torso.append(None)
+            axis.append(None)
         else:
             a, b = _mid(ls, rs), _mid(lh, rh)
-            torso.append(math.hypot(a[0] - b[0], a[1] - b[1]))
+            axis.append((b[0] - a[0], b[1] - a[1]))
+            torso.append(math.hypot(b[0] - a[0], b[1] - a[1]))
     ts = proxy.timestamps
     fps = (n - 1) / (ts[-1] - ts[0]) if n > 1 and ts[-1] > ts[0] else 30.0
-    return ClipComparison(clip, fps, n, len(exc), proxy, seg, torso)
+    return ClipComparison(clip, fps, n, len(exc), proxy, seg, torso, axis, conf)
 
 
 def frame_differences(c: ClipComparison, sex: str) -> list[tuple[float, float] | None]:
@@ -122,10 +142,100 @@ def frame_differences(c: ClipComparison, sex: str) -> list[tuple[float, float] |
     return out
 
 
+def speed_steps(c: ClipComparison, sex: str) -> list[tuple[int, float, float]]:
+    """(frame t, proxy speed, segment-model speed) for the steps t-1 -> t where both are defined."""
+    vp, vs = compute_velocity(c.proxy), compute_velocity(c.seg[sex])
+    return [(t, a, b) for t, (a, b) in enumerate(zip(vp, vs)) if a is not None and b is not None]
+
+
 def speed_pairs(c: ClipComparison, sex: str) -> list[tuple[float, float]]:
     """(proxy speed, segment-model speed) px/s where both are defined on the same step."""
-    vp, vs = compute_velocity(c.proxy), compute_velocity(c.seg[sex])
-    return [(a, b) for a, b in zip(vp, vs) if a is not None and b is not None]
+    return [(a, b) for _, a, b in speed_steps(c, sex)]
+
+
+def pearson(pairs: list[tuple[float, float]]) -> float | None:
+    """Pearson r between the two speed series; None if fewer than 3 pairs or no variance."""
+    if len(pairs) < 3:
+        return None
+    try:
+        return statistics.correlation([a for a, _ in pairs], [b for _, b in pairs])
+    except statistics.StatisticsError:
+        return None
+
+
+def decompose_offset(
+    diffs: list[tuple[float, float]], axes: list[tuple[float, float]]
+) -> tuple[float, list[float]]:
+    """Split difference vectors (segment minus proxy, px) into a constant offset and the rest.
+
+    Per frame, axes[i] is the torso axis vector (shoulder midpoint -> hip midpoint, px; its
+    length is the torso length L). The offset along the axis, in torso lengths, is
+    (d . a) / L^2 (positive = toward the hips); its mean over the frames is the constant offset c.
+    The time-varying part is what is left after removing c, per frame |d - c*a| / L in torso
+    lengths (so any component across the torso axis is part of it). Returns (c, those sizes)."""
+    along = [(d[0] * a[0] + d[1] * a[1]) / (a[0] ** 2 + a[1] ** 2) for d, a in zip(diffs, axes)]
+    c = statistics.fmean(along)
+    resid = [math.hypot(d[0] - c * a[0], d[1] - c * a[1]) / math.hypot(a[0], a[1])
+             for d, a in zip(diffs, axes)]
+    return c, resid
+
+
+def offset_for_clip(c: ClipComparison, sex: str) -> tuple[float, list[float], int] | None:
+    """(constant offset in torso lengths, time-varying sizes in torso lengths, n frames), or None."""
+    diffs, axes = [], []
+    for t in range(c.n_frames):
+        p, s, a = c.proxy.positions[t], c.seg[sex].positions[t], c.torso_axis[t]
+        if p is None or s is None or a is None:
+            continue
+        diffs.append((s[0] - p[0], s[1] - p[1]))
+        axes.append(a)
+    if not diffs:
+        return None
+    off, resid = decompose_offset(diffs, axes)
+    return off, resid, len(diffs)
+
+
+def offset_stats(comps: list[ClipComparison], sex: str) -> list:
+    """[offset, |offset|, tv mean, tv median, tv max, tv rms] in torso lengths. For several clips
+    each clip's own offset is removed; the pooled offset is the frame-weighted mean of the clip
+    offsets and the time-varying sizes are the concatenation of the per-clip residuals."""
+    parts = [r for c in comps if (r := offset_for_clip(c, sex)) is not None]
+    if not parts:
+        return [""] * 6
+    n = sum(p[2] for p in parts)
+    off = sum(p[0] * p[2] for p in parts) / n
+    resid = [x for p in parts for x in p[1]]
+    return [_f(off), _f(abs(off)), _f(statistics.fmean(resid)), _f(statistics.median(resid)),
+            _f(max(resid)), _f(math.sqrt(statistics.fmean(x * x for x in resid)))]
+
+
+LOWEST_CONF_N = 3  # how many lowest-confidence joints are listed per frame (reporting only)
+TOP_N = 10         # how many largest speed differences are listed (reporting only)
+
+
+def lowest_confidence(c: ClipComparison, frame: int, n: int = LOWEST_CONF_N) -> str:
+    """The n lowest-confidence joints (of the 14 the segment model uses) at a frame, as
+    'joint:confidence; ...' from the keypoint CSV."""
+    vals = sorted(c.conf.get(frame, {}).items(), key=lambda kv: (kv[1], kv[0]))[:n]
+    return "; ".join(f"{j}:{v:.4f}" for j, v in vals)
+
+
+TOP_SPEED_COLUMNS = [
+    "rank", "clip", "frame_from", "frame_to", "timestamp_to_s", "speed_proxy_px_s",
+    "speed_segment_px_s", "abs_diff_px_s", "lowest_conf_joints_frame_from",
+    "lowest_conf_joints_frame_to",
+]
+
+
+def top_speed_differences(comps: list[ClipComparison], sex: str, n: int = TOP_N) -> list[list]:
+    """The n largest |segment speed - proxy speed| steps pooled over clips (sex table given)."""
+    cands = [(abs(b - a), c, t, a, b) for c in comps for t, a, b in speed_steps(c, sex)]
+    cands.sort(key=lambda x: (-x[0], x[1].clip, x[2]))
+    rows = []
+    for rank, (d, c, t, a, b) in enumerate(cands[:n], start=1):
+        rows.append([rank, c.clip, t - 1, t, f"{c.proxy.timestamps[t]:.3f}", _f(a), _f(b), _f(d),
+                     lowest_confidence(c, t - 1), lowest_confidence(c, t)])
+    return rows
 
 
 SUMMARY_COLUMNS = [
@@ -133,8 +243,10 @@ SUMMARY_COLUMNS = [
     "n_segment_defined", "n_both_defined", "n_only_proxy_defined", "n_only_segment_defined",
     "pos_diff_px_mean", "pos_diff_px_median", "pos_diff_px_max",
     "pos_diff_torso_mean", "pos_diff_torso_median", "pos_diff_torso_max",
+    "offset_along_torso_axis_torso", "offset_abs_torso", "timevarying_mean_torso",
+    "timevarying_median_torso", "timevarying_max_torso", "timevarying_rms_torso",
     "n_speed_pairs", "speed_proxy_mean_px_s", "speed_segment_mean_px_s",
-    "speed_absdiff_mean_px_s", "speed_absdiff_max_px_s", "ldlj_difference",
+    "speed_absdiff_mean_px_s", "speed_absdiff_max_px_s", "speed_corr_pearson", "ldlj_difference",
 ]
 
 
@@ -166,9 +278,11 @@ def summary_row(label: str, sex: str, primary: str, comps: list[ClipComparison])
         label, sex, "primary" if sex == primary else "sensitivity",
         n_frames, sum(c.n_excluded for c in comps), n_proxy, n_seg, n_both, n_only_proxy, n_only_seg,
         *_stats([d[0] for d in diffs]), *_stats([d[1] for d in diffs]),
+        *offset_stats(comps, sex),
         len(sp), _f(statistics.fmean(a for a, _ in sp)) if sp else "",
         _f(statistics.fmean(b for _, b in sp)) if sp else "",
-        _f(statistics.fmean(absd)) if absd else "", _f(max(absd)) if absd else "", "n/a",
+        _f(statistics.fmean(absd)) if absd else "", _f(max(absd)) if absd else "",
+        _f(pearson(sp)), "n/a",
     ]
 
 
@@ -241,6 +355,18 @@ def build_manifest(comps: list[ClipComparison], primary: str, input_dir: Path, f
         f"(proxy defined on {n_proxy}).",
         "Re-run after the occlusion handling (3.2): it should raise the segment model's coverage.",
         "LDLJ difference: not available until 5.1 exists (summary.csv column = n/a).",
+        "",
+        "== Analyses (definitions; no interpretation in the files)",
+        "offset: per frame the difference vector (segment minus proxy) is projected on the torso axis "
+        "(shoulder midpoint -> hip midpoint); offset_along_torso_axis_torso is its mean over the clip "
+        "in torso lengths (positive = toward the hips); timevarying_* is |d - offset*axis| / torso "
+        "length per frame (anything across the torso axis is part of it). ALL = frame-weighted mean "
+        "offset, per-clip offsets removed before pooling.",
+        "speed correlation: Pearson r between proxy speed and segment-model speed over steps where "
+        "both are defined (empty if fewer than 3 steps or no variance).",
+        f"top_speed_differences.csv: the {TOP_N} largest |segment speed - proxy speed| steps pooled over "
+        f"clips (primary sex); the {LOWEST_CONF_N} lowest-confidence joints (of the 14 used) at each "
+        "frame of the step.",
         "",
         "== Models",
         "baseline: trunk-centroid proxy, equal weights on shoulders and hips (D-005 follow-up)",
@@ -315,6 +441,8 @@ def main() -> None:
             rows.append(summary_row(c.clip, sex, args.primary_sex, [c]))
         rows.append(summary_row("ALL", sex, args.primary_sex, comps))
     write_csv(out_root / "summary.csv", SUMMARY_COLUMNS, rows)
+    write_csv(out_root / "top_speed_differences.csv", TOP_SPEED_COLUMNS,
+              top_speed_differences(comps, args.primary_sex))
     (out_root / "manifest.txt").write_text(build_manifest(
         comps, args.primary_sex, args.input_dir, args.footage_dir, args.exclusions, args.paper))
 
@@ -328,7 +456,10 @@ def main() -> None:
                   f"{d['pos_diff_px_mean']}/{d['pos_diff_px_median']}/{d['pos_diff_px_max']} | "
                   f"torso lengths mean/median/max={d['pos_diff_torso_mean']}/{d['pos_diff_torso_median']}/"
                   f"{d['pos_diff_torso_max']} | speed pairs n={d['n_speed_pairs']} "
-                  f"|Δv| mean/max={d['speed_absdiff_mean_px_s']}/{d['speed_absdiff_max_px_s']} px/s")
+                  f"|Δv| mean/max={d['speed_absdiff_mean_px_s']}/{d['speed_absdiff_max_px_s']} px/s | "
+                  f"offset={d['offset_along_torso_axis_torso']} tv mean/max/rms="
+                  f"{d['timevarying_mean_torso']}/{d['timevarying_max_torso']}/{d['timevarying_rms_torso']} "
+                  f"torso lengths | speed r={d['speed_corr_pearson']}")
     print(f"Written to {out_root}")
 
 
