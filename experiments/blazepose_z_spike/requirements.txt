@@ -1,0 +1,13 @@
+# Isolated requirements for this spike only. Do not merge into
+# validation/requirements.txt or any project-wide dependency file.
+#
+# mediapipe pinned to 0.10.35, not left floating to latest: 1.0.x is known
+# to hard-crash (native abort, not catchable) on macOS Apple Silicon when
+# using the PoseLandmarker Tasks API - see DECISIONS.md D-016 and
+# https://github.com/google-ai-edge/mediapipe/issues/6356. This was found
+# empirically in this project before, not assumed from memory now - re-verify
+# if this spike is ever run on a different OS/architecture.
+mediapipe==0.10.35
+opencv-python
+numpy
+pandas
