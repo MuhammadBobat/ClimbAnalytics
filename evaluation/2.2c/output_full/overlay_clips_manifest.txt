@@ -1,0 +1,41 @@
+Candidate overlay clips manifest (evaluation/2.2c/make_candidate_overlays.py)
+date: 2026-11-01
+input folder: validation/output_full
+windows from: evaluation/2.2b/output_full/top_speed_differences.csv sha256 dbe358ca8128f2f0466675dcc41336777dd490d6440044c43520d980d7e5f53a
+windows chosen by proxy-vs-F speed difference (D-025): not representative of the clips
+padding: 15 frames each side (clamped at clip edges); full source resolution
+candidates drawn (nine): A_proxy, B_trunk_point, C_no_head, D_trunk_legs, E_c0.5, E_c0.6, E_c0.7, E_c0.8, F_full; EdL variants not drawn
+markers: A proxy (trunk) = circle BGR(167, 121, 204); B trunk point = square BGR(0, 159, 230); C no head = diamond BGR(115, 158, 0); D trunk+legs = triangle_up BGR(233, 180, 86); E cut-off 0.5 = triangle_down BGR(66, 228, 240); E cut-off 0.6 = cross BGR(0, 94, 213); E cut-off 0.7 = tilted_cross BGR(178, 114, 0); E cut-off 0.8 = star BGR(0, 0, 0); F full model = circle BGR(255, 255, 255)
+joint dots: grey shades by confidence band 0.5-0.6 / 0.6-0.7 / 0.7-0.8 / >= 0.8, red X < 0.5
+B and E use the w of the fold in which the drawn clip was held out: IMG_2412.MOV 0.749346, IMG_2416.MOV 0.749214, IMG_2417.MOV 0.766656, IMG_2419.MOV 0.744274, IMG_2420.MOV 0.737875
+
+== Frame exclusion file
+path: validation/frame_exclusions.csv
+contents (verbatim):
+# Frames excluded from gap statistics (analyze_occlusion_gaps.py --exclusions). Not footage edits: the keypoint data is untouched.
+# An excluded frame is treated like a dropped frame for joint-level counts (no observation, runs do not continue across it) but is reported separately.
+# Finding (2026-10-28, from validation/output_full/ and viewed frame 605): the ONLY confirmed wrong-person lock is IMG_2419 frames 597-614. Extra person boxes elsewhere are mostly holds, partial people or duplicate boxes; the chosen box was the climber. IMG_2419 frames 592-596 are a lost climber box (detector drop), not a wrong lock.
+# Mechanism: validate_vitpose.py's select_person_box takes the box nearest the previous centre with no distance limit, so after the climber box dropped out a bystander box was accepted, and the choice then reinforced itself (nearest to the bystander's own last position) until the bystander left the detections. Fix options are in the DECISIONS.md tracking entry (not decided here).
+video,start_frame,end_frame,reason
+IMG_2419.MOV,597,614,wrong-person lock (bystander on the mat); climber box dropped for 592-596 and was available again by frame 605
+
+== Code (at run time)
+git HEAD: 1a3a88d2592083371fb5df8a1747c6f445cca163
+metrics/scripts/exclusions modified since HEAD: no
+
+== Source videos
+IMG_2417.MOV: sha256 5c533f0eefe0e4e293eecb496e20d8fbb6fb456051596a8678252d06a3460505
+IMG_2419.MOV: sha256 71ccfbf07f70cf8102398a49870203b491e66e068486cf0b6e732746a0059447
+IMG_2420.MOV: sha256 f78e74baed71e25250a8865e1d22bfe6f713658de951239ee8afabf917b97b37
+
+== Windows (rank, clip, step frames, window frames, clamped, n frames, file, bytes)
+1, IMG_2420.MOV, 79->80, 64-95, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank01_IMG_2420_f64-95.mp4, 2210204
+2, IMG_2420.MOV, 71->72, 56-87, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank02_IMG_2420_f56-87.mp4, 2250148
+3, IMG_2420.MOV, 99->100, 84-115, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank03_IMG_2420_f84-115.mp4, 2305575
+4, IMG_2419.MOV, 182->183, 167-198, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank04_IMG_2419_f167-198.mp4, 2305367
+5, IMG_2419.MOV, 111->112, 96-127, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank05_IMG_2419_f96-127.mp4, 2401747
+6, IMG_2420.MOV, 97->98, 82-113, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank06_IMG_2420_f82-113.mp4, 2301392
+7, IMG_2420.MOV, 57->58, 42-73, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank07_IMG_2420_f42-73.mp4, 2293573
+8, IMG_2417.MOV, 531->532, 516-547, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank08_IMG_2417_f516-547.mp4, 2856111
+9, IMG_2420.MOV, 104->105, 89-120, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank09_IMG_2420_f89-120.mp4, 2242614
+10, IMG_2417.MOV, 58->59, 43-74, clamped: no, 32, evaluation/2.2c/overlays/output_full/rank10_IMG_2417_f43-74.mp4, 2923729
