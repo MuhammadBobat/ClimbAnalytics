@@ -122,6 +122,8 @@ Standard form (Balasubramanian et al.'s widely used velocity/jerk-based smoothne
 DJ = − (t_f − t_0)^3 / v_peak^2  ·  ∫_{t0}^{tf} | d²v(t)/dt² |² dt
 LDLJ = − ln( −DJ )
 ```
+**Implementation note (D-006 addendum, 2026-11-01):** the exponent of the duration term is 3 (the paper prints 5; only 3 is dimensionless, checked in `tests/test_smoothness.py`). `metrics.compute_ldlj` and `metrics.compute_sparc` (spectral arc length, same paper) are implemented; SPARC's first-run parameters are the authors' reference-code defaults (`metrics.SPARC_REFERENCE_DEFAULTS`: amp_th 0.05, 10 Hz, padlevel 4; not project-tuned, to be swept in 5.1a; D-006 addendum).
+
 Applied per movement segment to the velocity profile of a chosen signal — recommend starting with CoM velocity (whole-body smoothness) as the primary signal, with per-limb LDLJ as a secondary/optional metric.
 
 ---

@@ -638,6 +638,124 @@ def compute_com_working(joints: dict[str, JointSeries], sex: str) -> JointSeries
     return series
 
 
+# --- Smoothness of the CoM speed profile: LDLJ and SPARC (DECISIONS.md D-006) ---------------
+#
+# Both are from Balasubramanian, Melendez-Calderon, Roby-Brami & Burdet (2015), "On the analysis
+# of movement smoothness", J NeuroEng Rehabil 12:112 (primary PDF read 2026-11-01, D-006 addendum).
+# They take a speed profile v(t) over ONE segment (a window with no gaps); choosing segments
+# (hold-to-hold, D-018) and a minimum segment duration is not done here. No smoothing is applied
+# (the paper reports both measures are noise-sensitive). numpy is imported inside the functions.
+
+
+def speed_profile(
+    series: JointSeries, start_idx: int, end_idx: int
+) -> tuple[list[float], list[float]] | None:
+    """(timestamps, speeds) of a CoM (or any) series for frames start_idx..end_idx inclusive,
+    speed from compute_velocity (speed at frame t is the step t-1 -> t). None if any speed in
+    the window is None (a gap is never bridged, CLAUDE.md rule 9) or the window is empty."""
+    v = compute_velocity(series)
+    if not (0 <= start_idx <= end_idx < len(v)):
+        return None
+    window = v[start_idx:end_idx + 1]
+    if any(x is None for x in window):
+        return None
+    return list(series.timestamps[start_idx:end_idx + 1]), list(window)
+
+
+def _ldlj(times, speeds, exponent: int) -> float | None:
+    import numpy as np
+    t, v = np.asarray(times, dtype=float), np.asarray(speeds, dtype=float)
+    if t.ndim != 1 or t.shape != v.shape:
+        raise ValueError("times and speeds must be 1-D and the same length")
+    if len(t) < 3:
+        return None
+    if not np.all(np.diff(t) > 0):
+        raise ValueError("times must be strictly increasing")
+    v_peak = float(v.max())
+    if v_peak <= 0:
+        return None
+    # second derivative of speed by two passes of np.gradient (central differences, second-order
+    # one-sided at the ends, real timestamps), integral by the trapezoid rule
+    d2v = np.gradient(np.gradient(v, t, edge_order=2), t, edge_order=2)
+    f = d2v * d2v
+    integral = float(np.sum(0.5 * (f[1:] + f[:-1]) * np.diff(t)))
+    dj = (t[-1] - t[0]) ** exponent / v_peak ** 2 * integral
+    return -math.log(dj) if dj > 0 else None
+
+
+def compute_ldlj(times, speeds) -> float | None:
+    """Log dimensionless jerk of a speed profile, D-006:
+        LDLJ = -ln( (t2 - t1)^3 / v_peak^2 * integral_{t1}^{t2} |d2v/dt2|^2 dt ).
+    The exponent is 3, not the 5 printed in Balasubramanian et al. (2015) Eq. 2: only 3 makes the
+    quantity dimensionless for a speed profile (D-006 correction of 2026-10-28; checked
+    numerically in tests/test_smoothness.py). None if undefined (fewer than 3 samples, no
+    positive speed, or a zero integral)."""
+    return _ldlj(times, speeds, 3)
+
+
+def _sparc_from_spectrum(omega, vhat, amp_threshold: float, omega_c_max: float) -> float | None:
+    """SPARC = -(arc length of the normalised magnitude spectrum on [0, wc]), D-006:
+        SPARC = -int_0^wc sqrt( (1/wc)^2 + (dVhat/dw)^2 ) dw,   Vhat = V(w)/V(0),
+        wc = min( wc_max, min{ w : Vhat(r) < amp_threshold for all r > w } )   (paper Eq. 4, 5).
+    On the grid: w is the frequency of the last point with Vhat >= amp_threshold; the integral is
+    the length of the polyline through (w_k / wc, Vhat_k) for the grid points w_k <= wc (exact for
+    a piecewise-linear Vhat; no point is interpolated at wc when wc = wc_max falls between points)."""
+    import numpy as np
+    omega, vhat = np.asarray(omega, dtype=float), np.asarray(vhat, dtype=float)
+    above = np.nonzero(vhat >= amp_threshold)[0]
+    if len(above) == 0:
+        return None
+    wc = min(omega_c_max, float(omega[above[-1]]))
+    if wc <= 0:
+        return None
+    sel = omega <= wc
+    if int(sel.sum()) < 2:
+        return None
+    x, y = omega[sel] / wc, vhat[sel]
+    return -float(np.sum(np.hypot(np.diff(x), np.diff(y))))
+
+
+def compute_sparc(times, speeds, *, amp_threshold: float, omega_c_max: float, n_fft: int) -> float | None:
+    """Spectral arc length (SPARC) of a speed profile, Balasubramanian et al. (2015), D-006.
+    Vhat is the Fourier magnitude spectrum of the speed samples normalised by its DC value.
+
+    The three keyword arguments have NO defaults on purpose, so every call site states them.
+    The paper's main text names amp_threshold (V-bar) and omega_c_max (rad/s) as free parameters
+    and gives values only for its simulated example; the first-run values are the authors'
+    reference-code defaults in SPARC_REFERENCE_DEFAULTS (not project-tuned, D-006 addendum).
+    The paper's Appendix A (FFT length) was not available.     n_fft >= len(speeds) (zero-padded). Uniform sampling is assumed; fs = (N-1)/(t_last - t_first).
+    omega_c_max above the Nyquist frequency is capped by the grid. None if undefined."""
+    import numpy as np
+    if amp_threshold <= 0 or omega_c_max <= 0:
+        raise ValueError("amp_threshold and omega_c_max must be positive")
+    t, v = np.asarray(times, dtype=float), np.asarray(speeds, dtype=float)
+    if t.ndim != 1 or t.shape != v.shape:
+        raise ValueError("times and speeds must be 1-D and the same length")
+    if n_fft < len(v):
+        raise ValueError("n_fft must be at least the number of samples")
+    if len(v) < 2 or not t[-1] > t[0]:
+        return None
+    spectrum = np.abs(np.fft.rfft(v, n=n_fft))
+    if spectrum[0] <= 0:
+        return None
+    fs = (len(t) - 1) / (t[-1] - t[0])
+    omega = 2 * math.pi * np.arange(len(spectrum)) * fs / n_fft
+    return _sparc_from_spectrum(omega, spectrum / spectrum[0], amp_threshold, omega_c_max)
+
+
+# SPARC reference-code defaults, not project-tuned; swept in 5.1a (D-004 method, D-006 addendum).
+# Source (as stated by the author, read 2026-11-01): github.com/siva82kb/SPARC, scripts/smoothness.py,
+# commit 3650934: amp_th = 0.05, fc = 10 Hz (omega_c_max = 20 pi rad/s), padlevel = 4 with
+# nfft = 2^(ceil(log2 N) + padlevel). Call sites still pass amp_threshold / omega_c_max / n_fft
+# explicitly (compute_sparc has no defaults); use sparc_n_fft for n_fft.
+SPARC_REFERENCE_DEFAULTS = {"amp_threshold": 0.05, "omega_c_max": 20 * math.pi, "padlevel": 4}
+
+
+def sparc_n_fft(n_samples: int, padlevel: int = SPARC_REFERENCE_DEFAULTS["padlevel"]) -> int:
+    """nfft = 2^(ceil(log2 N) + padlevel), the reference code's FFT length."""
+    return 2 ** (math.ceil(math.log2(n_samples)) + padlevel)
+
+
 def _demo(path: Path) -> None:
     print(f"metrics.py demo — {path.name}")
     print(
