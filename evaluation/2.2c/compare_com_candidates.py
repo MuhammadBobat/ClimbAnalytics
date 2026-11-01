@@ -35,7 +35,8 @@ Outputs, under evaluation/2.2c/<input-folder-name>/:
     <clip>/frames.csv       per frame: torso length and x, y, speed, jitter for every candidate
     summary.csv             per clip and ALL, one row per candidate
     loco_trunk_weight.csv   the fitted w per fold, with training and held-out differences
-    manifest.txt            run provenance, renormalisation log, regression check
+    triage.csv              dominance triage (rule in TRIAGE_RULE and in the manifest)
+    manifest.txt            run provenance, renormalisation log, regression check, triage
 
 Usage:
     python3 evaluation/2.2c/compare_com_candidates.py
@@ -370,6 +371,81 @@ def summary_row(name: str, label: str, comps: list) -> list:
     ]
 
 
+# --- triage (added after the first run) --------------------------------------------------------
+#
+# Dominance triage on summary.csv. The rule was chosen AFTER the pooled first-run table had been
+# seen (not pre-registered); no threshold is involved. It drops nothing by itself that the author
+# has not asked for: it only marks candidates, and A and F are never dropped.
+
+NEVER_DROPPED = (L_A, L_F)
+# (summary column, +1 = higher is better, -1 = lower is better)
+TRIAGE_METRICS = (("coverage", +1), ("defined_to_none_per_1000_frames", -1),
+                  ("jitter_common_mean", -1))
+TRIAGE_RULE = (
+    "A candidate is dominated if another candidate is at least as good on coverage (higher), "
+    "defined-to-None transitions per 1,000 frames (lower) and mean jitter on the common support "
+    "(lower), and strictly better on at least one of the three, pooled (ALL) and in every one of "
+    "the five clips. Values are those written to summary.csv (4 decimals); a missing value never "
+    "dominates and is never dominated. No threshold. A and F are never dropped (they are reported "
+    "as dominated or not, but kept). The rule was chosen after the pooled first-run table had "
+    "been seen; it is not a pre-registered rule."
+)
+
+
+def _metric(row: dict, col: str):
+    v = row.get(col, "")
+    return float(v) if v not in ("", None) else None
+
+
+def dominates(a: dict, b: dict) -> bool:
+    """True if summary row a is at least as good as b on all three triage metrics and strictly
+    better on at least one (one scope: one clip or ALL)."""
+    strict = False
+    for col, sign in TRIAGE_METRICS:
+        x, y = _metric(a, col), _metric(b, col)
+        if x is None or y is None:
+            return False
+        d = sign * (x - y)
+        if d < 0:
+            return False
+        strict = strict or d > 0
+    return strict
+
+
+def triage(rows: list, never_dropped=NEVER_DROPPED) -> list:
+    """rows: summary.csv rows as dicts (keys clip, candidate, ...). Per candidate: the other
+    candidates dominating it in each scope (ALL first, then the clips in file order), those
+    dominating it in every scope, and whether it is dropped."""
+    scopes = ["ALL"] + [c for c in dict.fromkeys(r["clip"] for r in rows) if c != "ALL"]
+    by = {(r["clip"], r["candidate"]): r for r in rows}
+    cands = list(dict.fromkeys(r["candidate"] for r in rows))
+    out = []
+    for x in cands:
+        per_scope = {sc: [y for y in cands if y != x and dominates(by[(sc, y)], by[(sc, x)])]
+                     for sc in scopes}
+        every = [y for y in cands if all(y in per_scope[sc] for sc in scopes)]
+        out.append({"candidate": x, "dominated": bool(every), "dominated_by": every,
+                    "protected": x in never_dropped, "dropped": bool(every) and x not in never_dropped,
+                    "per_scope": per_scope})
+    return out
+
+
+def survivors(tri: list) -> list:
+    return [t["candidate"] for t in tri if not t["dropped"]]
+
+
+def triage_csv_rows(tri: list) -> tuple[list, list]:
+    scopes = list(tri[0]["per_scope"]) if tri else []
+    header = ["candidate", "dominated", "dominated_by", "never_dropped", "dropped"] + \
+             [f"dominated_by_in_{sc}" for sc in scopes]
+    rows = []
+    for t in tri:
+        rows.append([t["candidate"], "yes" if t["dominated"] else "no", ";".join(t["dominated_by"]),
+                     "yes" if t["protected"] else "no", "yes" if t["dropped"] else "no"] +
+                    [";".join(t["per_scope"][sc]) for sc in scopes])
+    return header, rows
+
+
 def write_csv(path: Path, header: list, rows: list) -> None:
     with open(path, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
@@ -445,7 +521,7 @@ def renormalisation_log(sex: str) -> list:
 
 
 def build_manifest(comps, folds, input_dir, footage_dir, exclusions_path, paper, sex, tol,
-                   check, today=None) -> str:
+                   check, today=None, tri=None) -> str:
     ok, msgs = check if check else (None, ["not run"])
     L = [
         "CoM candidate comparison manifest (evaluation/2.2c/compare_com_candidates.py)",
@@ -486,6 +562,17 @@ def build_manifest(comps, folds, input_dir, footage_dir, exclusions_path, paper,
           "(hand, foot: their single joint); trunk joints keep the D-007 0.5 rule.",
           "", "== Regression check against evaluation/2.2b/output_full (A vs proxy, F vs seg_male)",
           f"result: {'PASS' if ok else ('not run' if ok is None else 'FAIL')}"] + msgs
+    if tri is not None:
+        keep = survivors(tri)
+        L += ["", "== Triage (triage.csv; added after the first run)", TRIAGE_RULE,
+              "survivors (default overlay panels are these plus A and F, which are always kept): "
+              + ", ".join(keep),
+              "dropped: " + (", ".join(f"{t['candidate']} (dominated by {', '.join(t['dominated_by'])})"
+                                       for t in tri if t["dropped"]) or "none"),
+              "A and F dominated but kept: " + (", ".join(
+                  f"{t['candidate']} (by {', '.join(t['dominated_by'])})" for t in tri
+                  if t["protected"] and t["dominated"]) or "none"),
+              "Triage only marks candidates; nothing is chosen or ranked."]
     L += ["", "== Frame exclusion file"]
     if exclusions_path.exists():
         L += [f"path: {exclusions_path.as_posix()}", "contents (verbatim):",
@@ -563,6 +650,8 @@ def main() -> None:
             rows.append(summary_row(c.clip, l, [c]))
         rows.append(summary_row("ALL", l, comps))
     write_csv(out_root / "summary.csv", SUMMARY_COLUMNS, rows)
+    tri = triage([dict(zip(SUMMARY_COLUMNS, r)) for r in rows])
+    write_csv(out_root / "triage.csv", *triage_csv_rows(tri))
     write_csv(out_root / "loco_trunk_weight.csv",
               ["held_out_clip", "w", "n_train_frames", "train_mean_px", "train_mean_torso",
                "n_heldout_frames", "heldout_mean_px", "heldout_mean_torso"],
@@ -577,12 +666,13 @@ def main() -> None:
     check = regression_check(comps, args.regression_ref, expect)
     (out_root / "manifest.txt").write_text(build_manifest(
         comps, folds, args.input_dir, args.footage_dir, args.exclusions, args.paper, args.sex,
-        FIT_TOL, check))
+        FIT_TOL, check, tri=tri))
     print("regression check:", "PASS" if check[0] else "FAIL")
     for m in check[1]:
         print("  " + m)
     for r in folds:
         print(f"fold {r['held_out_clip']}: w = {r['w']:.6f}")
+    print("survivors:", ", ".join(survivors(tri)))
     print(f"Written to {out_root}")
     if not check[0]:
         sys.exit(1)

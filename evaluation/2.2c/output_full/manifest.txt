@@ -44,6 +44,13 @@ coverage frames: 5886 (expected 5886) ok
 coverage A_proxy: 5828 (expected 5828) ok
 coverage F_full: 5349 (expected 5349) ok
 
+== Triage (triage.csv; added after the first run)
+A candidate is dominated if another candidate is at least as good on coverage (higher), defined-to-None transitions per 1,000 frames (lower) and mean jitter on the common support (lower), and strictly better on at least one of the three, pooled (ALL) and in every one of the five clips. Values are those written to summary.csv (4 decimals); a missing value never dominates and is never dominated. No threshold. A and F are never dropped (they are reported as dominated or not, but kept). The rule was chosen after the pooled first-run table had been seen; it is not a pre-registered rule.
+survivors (default overlay panels are these plus A and F, which are always kept): A_proxy, EdL_c0.5, F_full
+dropped: B_trunk_point (dominated by A_proxy, E_c0.5, EdL_c0.5), C_no_head (dominated by EdL_c0.5), D_trunk_legs (dominated by EdL_c0.5), E_c0.5 (dominated by EdL_c0.5), E_c0.6 (dominated by A_proxy, E_c0.5, EdL_c0.5, EdL_c0.6), E_c0.7 (dominated by A_proxy, B_trunk_point, E_c0.5, E_c0.6, EdL_c0.5, EdL_c0.6), E_c0.8 (dominated by A_proxy, B_trunk_point, E_c0.5, E_c0.6, E_c0.7, EdL_c0.5, EdL_c0.6, EdL_c0.7), EdL_c0.6 (dominated by EdL_c0.5), EdL_c0.7 (dominated by E_c0.5, EdL_c0.5, EdL_c0.6), EdL_c0.8 (dominated by A_proxy, B_trunk_point, E_c0.5, E_c0.6, E_c0.7, EdL_c0.5, EdL_c0.6, EdL_c0.7)
+A and F dominated but kept: A_proxy (by EdL_c0.5)
+Triage only marks candidates; nothing is chosen or ranked.
+
 == Frame exclusion file
 path: validation/frame_exclusions.csv
 contents (verbatim):
@@ -55,8 +62,8 @@ video,start_frame,end_frame,reason
 IMG_2419.MOV,597,614,wrong-person lock (bystander on the mat); climber box dropped for 592-596 and was available again by frame 605
 
 == Code and environment (at run time)
-git HEAD: 1a3a88d2592083371fb5df8a1747c6f445cca163
-metrics/scripts/exclusions modified since HEAD: no
+git HEAD: e0fdf31dc09aebd1ee681322fb05afe2d7ceafcd
+metrics/scripts/exclusions modified since HEAD: yes
 torch: 2.11.0
 transformers: 5.14.1
 ultralytics: 8.4.108

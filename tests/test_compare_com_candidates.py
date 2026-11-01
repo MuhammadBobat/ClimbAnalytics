@@ -174,5 +174,88 @@ class ClipTests(unittest.TestCase):
             self.assertIn(needle, text)
 
 
+def table(spec):
+    """spec: {candidate: {scope: (coverage, to_none, jitter)}} -> summary-style row dicts."""
+    return [{"clip": sc, "candidate": cand, "coverage": v[0], "defined_to_none_per_1000_frames": v[1],
+             "jitter_common_mean": v[2]} for cand, d in spec.items() for sc, v in d.items()]
+
+
+class TriageTests(unittest.TestCase):
+    SCOPES = ("ALL", "c1", "c2")
+
+    def spec(self):
+        good = ("0.9", "2.0", "0.010")
+        s = {  # name: per-scope (coverage, transitions, jitter), as the strings of summary.csv
+            "A_proxy": {sc: ("0.8", "5.0", "0.020") for sc in self.SCOPES},
+            "F_full": {sc: ("0.7", "9.0", "0.030") for sc in self.SCOPES},
+            "P": {sc: good for sc in self.SCOPES},                       # beats A and F everywhere
+            "Q": {sc: ("0.85", "3.0", "0.015") for sc in self.SCOPES},   # dominated by P
+            "R": {"ALL": good, "c1": good, "c2": ("0.9", "2.0", "0.025")},  # not better than A in c2
+            "T": {sc: good for sc in self.SCOPES},                       # tie with P
+            "M": {"ALL": ("", "2.0", "0.010"), "c1": good, "c2": good},  # missing value pooled
+        }
+        return s
+
+    def result(self):
+        tri = cc.triage(table(self.spec()))
+        return {t["candidate"]: t for t in tri}, tri
+
+    def test_dominated_in_every_scope(self):
+        r, _ = self.result()
+        self.assertTrue(r["Q"]["dominated"])
+        self.assertEqual(r["Q"]["dominated_by"], ["P", "T"])   # P and T are equal and both beat Q
+        self.assertTrue(r["Q"]["dropped"])
+
+    def test_a_and_f_are_dominated_but_never_dropped(self):
+        r, _ = self.result()
+        for name in ("A_proxy", "F_full"):
+            self.assertTrue(r[name]["dominated"])
+            self.assertTrue(r[name]["protected"])
+            self.assertFalse(r[name]["dropped"])
+
+    def test_one_scope_is_not_enough(self):
+        r, _ = self.result()
+        # R beats A pooled and in c1 but not in c2 (jitter worse), so A is not dominated by R
+        self.assertNotIn("R", r["A_proxy"]["dominated_by"])
+        self.assertIn("R", r["A_proxy"]["per_scope"]["ALL"])
+        self.assertNotIn("R", r["A_proxy"]["per_scope"]["c2"])
+
+    def test_ties_do_not_dominate_each_other(self):
+        r, _ = self.result()
+        self.assertFalse(r["P"]["dominated"])
+        self.assertFalse(r["T"]["dominated"])
+        self.assertNotIn("T", r["P"]["per_scope"]["ALL"])
+
+    def test_missing_value_never_dominates_or_is_dominated(self):
+        r, _ = self.result()
+        self.assertFalse(r["M"]["dominated"])
+        self.assertNotIn("M", r["A_proxy"]["dominated_by"])
+
+    def test_survivors_and_csv(self):
+        r, tri = self.result()
+        self.assertEqual(cc.survivors(tri), ["A_proxy", "F_full", "P", "R", "T", "M"])
+        header, rows = cc.triage_csv_rows(tri)
+        self.assertEqual(header[:5], ["candidate", "dominated", "dominated_by", "never_dropped", "dropped"])
+        self.assertEqual(header[5:], [f"dominated_by_in_{sc}" for sc in self.SCOPES])
+        q = next(row for row in rows if row[0] == "Q")
+        self.assertEqual(q[1:5], ["yes", "P;T", "no", "yes"])
+
+    def test_dominates_requires_a_strict_improvement(self):
+        a = {"coverage": "0.9", "defined_to_none_per_1000_frames": "2.0", "jitter_common_mean": "0.01"}
+        self.assertFalse(cc.dominates(a, dict(a)))
+        b = dict(a, coverage="0.8")
+        self.assertTrue(cc.dominates(a, b))
+        self.assertFalse(cc.dominates(b, a))
+        self.assertFalse(cc.dominates(dict(a, jitter_common_mean="0.02"), dict(a, coverage="0.8")))
+
+    def test_manifest_has_rule_survivors_and_timing_statement(self):
+        _, tri = self.result()
+        text = cc.build_manifest([], [], Path("in"), Path("f"), Path("nope.csv"), Path("nope.pdf"),
+                                 "male", cc.FIT_TOL, (True, []), tri=tri)
+        for needle in ("== Triage", "chosen after the pooled first-run table", "No threshold",
+                       "survivors", "A and F dominated but kept", "nothing is chosen or ranked"):
+            self.assertIn(needle, text)
+
+
 if __name__ == "__main__":
     unittest.main()
