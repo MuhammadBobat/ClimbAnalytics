@@ -19,6 +19,8 @@ from metrics import (
     compute_com_segment_model_no_head,
     compute_com_trunk_legs,
     compute_com_trunk_point,
+    compute_com_working,
+    WORKING_COM_CUTOFF,
     renormalised_specs,
     segment_model_specs,
     trunk_cm_fraction,
@@ -266,6 +268,29 @@ class BlendedTests(unittest.TestCase):
         j["left_hip"] = JointSeries("left_hip", [None], [0.0], [GAP_LOW_CONFIDENCE], [0.3])
         s = compute_com_blended(j, "male", 0.6, 0.5)
         self.assertEqual(s.gap_reasons[0], GAP_LOW_CONFIDENCE)
+
+
+class WorkingComTests(unittest.TestCase):
+    def test_is_edl_at_the_d007_cutoff(self):
+        self.assertEqual(WORKING_COM_CUTOFF, 0.5)
+        confs = {"left_wrist": 0.55, "right_knee": 0.45}
+        j = joints_of(POSE, conf=0.9, confs=confs)
+        for sex in SEXES:
+            got = compute_com_working(j, sex)
+            want = compute_com_blended(j, sex, trunk_cm_fraction(sex), 0.5)
+            self.assertEqual(got.positions, want.positions)
+        self.assertEqual(got.joint_name, "com_working_edl_mean")
+
+    def test_equals_no_head_model_when_every_joint_is_present(self):
+        j = joints_of(POSE, conf=0.9)
+        a, c = at(compute_com_working(j, "male")), at(compute_com_segment_model_no_head(j, "male"))
+        self.assertAlmostEqual(a[0], c[0]); self.assertAlmostEqual(a[1], c[1])
+
+    def test_defined_when_a_limb_is_lost_and_sex_is_required(self):
+        pose = dict(POSE); pose["left_ankle"] = None
+        self.assertIsNotNone(at(compute_com_working(joints_of(pose), "male")))
+        with self.assertRaises(TypeError):
+            compute_com_working(joints_of(POSE))
 
 
 class InvarianceTests(unittest.TestCase):

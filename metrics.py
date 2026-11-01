@@ -622,6 +622,22 @@ def blended_limb_usage(
     return _blended(joints, sex, w_hip, confidence_cutoff)[1]
 
 
+# Working CoM (DECISIONS.md D-026 addendum, 2026-11-01; supersedes D-025's "proxy is the working
+# CoM" without editing D-025). Candidate E-dL at the D-007 cut-off: no gate beyond the 0.5 gap rule.
+# Chosen on the author's visual review (continuity, plausibility), not on accuracy; no ground truth.
+# The trunk-centroid proxy (compute_com) stays as the baseline. Existing callers still pass the CoM
+# explicitly; nothing calls this by default.
+WORKING_COM_CUTOFF = OCCLUSION_CONFIDENCE_THRESHOLD
+
+
+def compute_com_working(joints: dict[str, JointSeries], sex: str) -> JointSeries:
+    """The working CoM: compute_com_blended with w = de Leva trunk CM fraction (0.4310 male) and
+    confidence_cutoff = WORKING_COM_CUTOFF (0.5). `sex` is required, as for the segment model."""
+    series = compute_com_blended(joints, sex, trunk_cm_fraction(sex), WORKING_COM_CUTOFF)
+    series.joint_name = f"com_working_edl_{sex}"
+    return series
+
+
 def _demo(path: Path) -> None:
     print(f"metrics.py demo — {path.name}")
     print(
