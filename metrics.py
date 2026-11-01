@@ -57,6 +57,9 @@ class JointSeries:
     confidence below OCCLUSION_CONFIDENCE_THRESHOLD) — never filled in here.
     timestamps[i] is the real timestamp_s for frame i, taken from the data,
     not assumed from a constant fps.
+    confidences[i] (optional, D-026) is the raw keypoint confidence at frame i, kept
+    even when it is below OCCLUSION_CONFIDENCE_THRESHOLD (positions[i] is then None);
+    None where there was no detection, or when the series was built without them.
     gap_reasons[i] is None where positions[i] is present, otherwise one of
     GAP_MISSING_DETECTION / GAP_LOW_CONFIDENCE (GAP_UNSPECIFIED if the series
     was built without reasons).
@@ -65,8 +68,11 @@ class JointSeries:
     positions: list[tuple[float, float] | None]
     timestamps: list[float]
     gap_reasons: list[str | None] | None = None
+    confidences: list[float | None] | None = None
 
     def __post_init__(self) -> None:
+        if self.confidences is not None and len(self.confidences) != len(self.positions):
+            raise ValueError("confidences must be the same length as positions")
         if self.gap_reasons is None:
             self.gap_reasons = [
                 None if p is not None else GAP_UNSPECIFIED for p in self.positions
@@ -107,7 +113,7 @@ def apply_frame_exclusions(
         for f in excluded:
             if 0 <= f < len(pos):
                 pos[f], rs[f] = None, GAP_EXCLUDED
-        out[name] = JointSeries(name, pos, s.timestamps, rs)
+        out[name] = JointSeries(name, pos, s.timestamps, rs, s.confidences)
     return out
 
 
@@ -173,8 +179,10 @@ def load_keypoints_csv(path: Path) -> dict[str, JointSeries]:
     for joint, frame_map in by_joint.items():
         positions: list[tuple[float, float] | None] = []
         reasons: list[str | None] = []
+        confs: list[float | None] = []
         for f in range(last_frame + 1):
             entry = frame_map.get(f)
+            confs.append(None if entry is None else entry[2])
             if entry is None:
                 positions.append(None)
                 reasons.append(GAP_MISSING_DETECTION)
@@ -186,7 +194,7 @@ def load_keypoints_csv(path: Path) -> dict[str, JointSeries]:
                 reasons.append(None)
         series[joint] = JointSeries(
             joint_name=joint, positions=positions, timestamps=timestamps,
-            gap_reasons=reasons,
+            gap_reasons=reasons, confidences=confs,
         )
     return series
 
@@ -462,6 +470,156 @@ def compute_com_segment_model(joints: dict[str, JointSeries], sex: str) -> Joint
     approximation — sensitivity checks only). See the block comment above."""
     return compute_com_from_segments(
         joints, segment_model_specs(sex), name=f"com_segment_model_de_leva_1996_{sex}")
+
+
+# --- Candidate CoM estimators B-E (step 2.2c, DECISIONS.md D-026) -----------------------
+#
+# Candidates compared next to the proxy (A = compute_com) and the full segment model
+# (F = compute_com_segment_model). NONE is adopted; the proxy stays the working CoM
+# (D-025). Parameters: de Leva (1996) Table 4 as above. The subsets, the trunk-point
+# fit, the confidence gate and the blend are this project's own design, with no
+# literature source (D-026). Same missing-joint policy as above (a joint below 0.5 is a
+# gap, no renormalising over a missing joint) except E, which drops single limb segments.
+
+
+@dataclass(frozen=True)
+class Renormalisation:
+    """What renormalising a reduced segment set did (logged in the 2.2c manifest, D-026)."""
+    removed: tuple[str, ...]
+    removed_mass: float       # sum of the removed segments' fractions before renormalising
+    kept_mass_before: float   # sum of the kept fractions before renormalising
+    scale: float              # 1 / kept_mass_before
+
+
+def renormalised_specs(
+    specs: list[SegmentSpec], drop: frozenset[str] | set[str]
+) -> tuple[list[SegmentSpec], Renormalisation]:
+    """The specs without the segments named in `drop`, mass fractions divided by their sum so
+    they total 1. Equivalent to placing the removed mass at the CoM of the kept segments
+    (D-026 approximation 3)."""
+    unknown = set(drop) - {s.name for s in specs}
+    if unknown:
+        raise KeyError(f"segments not in specs: {sorted(unknown)}")
+    kept = [s for s in specs if s.name not in drop]
+    kept_mass = sum(s.mass_fraction for s in kept)
+    if kept_mass <= 0:
+        raise ValueError("no mass left after dropping segments")
+    out = [SegmentSpec(s.name, s.mass_fraction / kept_mass, s.proximal, s.distal, s.cm_fraction)
+           for s in kept]
+    removed = tuple(s.name for s in specs if s.name in drop)
+    removed_mass = sum(s.mass_fraction for s in specs if s.name in drop)
+    return out, Renormalisation(removed, removed_mass, kept_mass, 1.0 / kept_mass)
+
+
+def trunk_cm_fraction(sex: str) -> float:
+    """de Leva's trunk CM position as a fraction of shoulder-midpoint -> hip-midpoint (the w of
+    candidate B that puts it at the trunk CM; 0.4310 male)."""
+    return next(s.cm_fraction for s in segment_model_specs(sex) if s.name == "trunk")
+
+
+def _no_head_specs(sex: str) -> tuple[list[SegmentSpec], Renormalisation]:
+    return renormalised_specs(segment_model_specs(sex), {"head"})
+
+
+def _trunk_legs_specs(sex: str) -> tuple[list[SegmentSpec], Renormalisation]:
+    drop = {"head"} | {f"{side}_{seg}" for side in ("left", "right")
+                       for seg in ("upper_arm", "forearm", "hand")}
+    return renormalised_specs(segment_model_specs(sex), drop)
+
+
+def compute_com_trunk_point(
+    joints: dict[str, JointSeries], w_hip: float, name: str | None = None
+) -> JointSeries:
+    """Candidate B: CoM = (1 - w) * shoulder midpoint + w * hip midpoint, 0 <= w <= 1.
+    None where any of the four trunk joints is a gap. w = 0.5 is the proxy (A). See D-026."""
+    if not 0.0 <= w_hip <= 1.0:
+        raise ValueError(f"w_hip must be in [0, 1], got {w_hip}")
+    s = (1.0 - w_hip) / 2.0
+    h = w_hip / 2.0
+    series = compute_com(joints, {"left_shoulder": s, "right_shoulder": s,
+                                  "left_hip": h, "right_hip": h})
+    series.joint_name = name or f"com_trunk_point_w{w_hip:.4f}"
+    return series
+
+
+def compute_com_segment_model_no_head(joints: dict[str, JointSeries], sex: str) -> JointSeries:
+    """Candidate C: the segment model without the head (trunk, both arms, both legs; hands at
+    wrists, feet at ankles), mass fractions renormalised to sum to 1. 12 joints needed (no
+    ears); None if any is a gap. See D-026."""
+    specs, _ = _no_head_specs(sex)
+    return compute_com_from_segments(joints, specs, name=f"com_no_head_{sex}")
+
+
+def compute_com_trunk_legs(joints: dict[str, JointSeries], sex: str) -> JointSeries:
+    """Candidate D: trunk and both legs only (thigh, shank, foot at ankle), renormalised.
+    8 joints needed (shoulders, hips, knees, ankles); None if any is a gap. See D-026."""
+    specs, _ = _trunk_legs_specs(sex)
+    return compute_com_from_segments(joints, specs, name=f"com_trunk_legs_{sex}")
+
+
+def _segment_cm(joints: dict[str, JointSeries], s: SegmentSpec, t: int) -> tuple[float, float]:
+    prox = _point(joints, s.proximal, t)
+    if s.distal is None:
+        return prox
+    dist = _point(joints, s.distal, t)
+    return (prox[0] + s.cm_fraction * (dist[0] - prox[0]),
+            prox[1] + s.cm_fraction * (dist[1] - prox[1]))
+
+
+def _blended(joints, sex, w_hip, confidence_cutoff):
+    if not 0.0 < confidence_cutoff <= 1.0:
+        raise ValueError(f"confidence_cutoff must be in (0, 1], got {confidence_cutoff}")
+    limbs = [s for s in _no_head_specs(sex)[0] if s.name != "trunk"]
+    for s in limbs:
+        for j in s.joints:
+            if j not in joints:
+                raise KeyError(f"joints not in series: {[j]}")
+            if joints[j].confidences is None:
+                raise ValueError(f"{j}: series carry no confidences (needed by the blended CoM)")
+    base = compute_com_trunk_point(joints, w_hip)
+    positions: list[tuple[float, float] | None] = []
+    reasons: list[str | None] = []
+    usage: list[tuple[str, ...]] = []
+    for t, b in enumerate(base.positions):
+        if b is None:
+            positions.append(None)
+            reasons.append(base.gap_reasons[t])
+            usage.append(())
+            continue
+        x, y, used = b[0], b[1], []
+        for s in limbs:
+            # position present (so not a gap or exclusion) and raw confidence >= cut-off
+            if all(joints[j].positions[t] is not None and joints[j].confidences[t] is not None
+                   and joints[j].confidences[t] >= confidence_cutoff for j in s.joints):
+                cm = _segment_cm(joints, s, t)
+                x += s.mass_fraction * (cm[0] - b[0])
+                y += s.mass_fraction * (cm[1] - b[1])
+                used.append(s.name)
+        positions.append((x, y))
+        reasons.append(None)
+        usage.append(tuple(used))
+    series = JointSeries(f"com_blended_{sex}_w{w_hip:.4f}_c{confidence_cutoff}", positions,
+                         list(base.timestamps), reasons)
+    return series, usage
+
+
+def compute_com_blended(
+    joints: dict[str, JointSeries], sex: str, w_hip: float, confidence_cutoff: float
+) -> JointSeries:
+    """Candidate E: E = B + sum over limb segments (upper arms, forearms, thighs, shanks,
+    hands, feet) of m'_s * (CM_s - B), m'_s the head-renormalised mass fractions. A segment is
+    used only when every one of its joints has a position and raw confidence >= the cut-off
+    (hand, foot: their single joint); otherwise its term is zero, so a lost limb falls back
+    toward B. None only where B is None (a trunk joint is a gap; trunk joints keep the
+    D-007 0.5 rule). Needs JointSeries.confidences. Cut-off is swept, not chosen. See D-026."""
+    return _blended(joints, sex, w_hip, confidence_cutoff)[0]
+
+
+def blended_limb_usage(
+    joints: dict[str, JointSeries], sex: str, w_hip: float, confidence_cutoff: float
+) -> list[tuple[str, ...]]:
+    """Per frame, the names of the limb segments compute_com_blended used (diagnostic)."""
+    return _blended(joints, sex, w_hip, confidence_cutoff)[1]
 
 
 def _demo(path: Path) -> None:
