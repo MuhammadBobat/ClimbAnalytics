@@ -1,0 +1,27 @@
+Sweep of the lock-rule family on cached boxes: 4040 settings + legacy; replay equals baseline was checked first (replay_check.txt).
+Reference track for IMG_2419 592-614 is PROVISIONAL (reference_track_2419.csv).
+Feasible (hard filters i-iii, iii = legacy-tracked frames unchanged in the first 100): 2967 of 4040. Feasible under the literal filter iii (also no newly tracked frame in the first 100): 435.
+
+g0: 0.25: 824/960, 0.5: 815/960, 0.75: 751/960, 1.0: 468/960, off: 109/200
+v: 0.0: 853/1160, 0.02: 735/960, 0.05: 715/960, 0.1: 664/960
+s: 1.75: 646/1020, 2.5: 969/1020, 3.5: 742/1020, off: 610/980
+K: 1: 1088/1340, 10: 1083/1360, 30: 796/1340
+c: 0.05: 680/808, 0.1: 644/808, 0.2: 612/808, 0.3: 596/808, off: 435/808
+N: 10: 633/1010, 20: 778/1010, 40: 778/1010, off: 778/1010
+
+Top 15 feasible settings by (margin rounded to 0.1 desc, changed frames, components, 2419 longest drop); a convenience for choosing sheets, not a decision:
+  g0=0.5 v=0 s=off K=1 c=off N=off | margin 1.85 | changed 18 | 2419 window correct/wrong/dropped/rescued 13/0/10/0 | rescued total 0
+  g0=0.5 v=0 s=off K=10 c=off N=off | margin 1.85 | changed 18 | 2419 window correct/wrong/dropped/rescued 13/0/10/0 | rescued total 0
+  g0=0.5 v=0 s=off K=30 c=off N=off | margin 1.85 | changed 18 | 2419 window correct/wrong/dropped/rescued 13/0/10/0 | rescued total 0
+  g0=0.5 v=0 s=off K=1 c=off N=20 | margin 1.85 | changed 18 | 2419 window correct/wrong/dropped/rescued 13/0/10/0 | rescued total 0
+  g0=0.5 v=0 s=off K=1 c=off N=40 | margin 1.85 | changed 18 | 2419 window correct/wrong/dropped/rescued 13/0/10/0 | rescued total 0
+  g0=0.5 v=0 s=off K=10 c=off N=20 | margin 1.85 | changed 18 | 2419 window correct/wrong/dropped/rescued 13/0/10/0 | rescued total 0
+  g0=0.5 v=0 s=off K=10 c=off N=40 | margin 1.85 | changed 18 | 2419 window correct/wrong/dropped/rescued 13/0/10/0 | rescued total 0
+  g0=0.5 v=0 s=off K=30 c=off N=20 | margin 1.85 | changed 18 | 2419 window correct/wrong/dropped/rescued 13/0/10/0 | rescued total 0
+  g0=0.5 v=0 s=off K=30 c=off N=40 | margin 1.85 | changed 18 | 2419 window correct/wrong/dropped/rescued 13/0/10/0 | rescued total 0
+  g0=0.5 v=0 s=off K=1 c=0.3 N=off | margin 1.85 | changed 49 | 2419 window correct/wrong/dropped/rescued 16/0/7/3 | rescued total 32
+  g0=0.5 v=0 s=off K=10 c=0.3 N=off | margin 1.85 | changed 49 | 2419 window correct/wrong/dropped/rescued 16/0/7/3 | rescued total 32
+  g0=0.5 v=0 s=off K=30 c=0.3 N=off | margin 1.85 | changed 49 | 2419 window correct/wrong/dropped/rescued 16/0/7/3 | rescued total 32
+  g0=0.5 v=0 s=off K=1 c=0.3 N=10 | margin 1.85 | changed 49 | 2419 window correct/wrong/dropped/rescued 16/0/7/3 | rescued total 32
+  g0=0.5 v=0 s=off K=1 c=0.3 N=20 | margin 1.85 | changed 49 | 2419 window correct/wrong/dropped/rescued 16/0/7/3 | rescued total 32
+  g0=0.5 v=0 s=off K=1 c=0.3 N=40 | margin 1.85 | changed 49 | 2419 window correct/wrong/dropped/rescued 16/0/7/3 | rescued total 32

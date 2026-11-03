@@ -1,0 +1,9 @@
+Lists and sheets manifest (evaluation/lock_rule/make_lists_and_sheets.py)
+legitimate ranges used for 'close alternative' (from the legacy tracks of the five clips, IMG_2419 597-614 excluded; see legit_ranges.txt): centre distance <= 0.205 h of the chosen box (max centre jump / h between consecutive frames), height ratio within [0.608, 1.64] (max height ratio to the median of the last 10 accepted boxes)
+multi-box frames (>= 2 cached boxes at conf >= 0.5), per clip: IMG_2412 10, IMG_2416 6, IMG_2417 0, IMG_2419 122, IMG_2420 62; total 200
+of those, frames with a close alternative (could hide a wrong lock that shows no jump), per clip: IMG_2412 0, IMG_2416 6, IMG_2417 0, IMG_2419 13, IMG_2420 1; total 20
+feasible settings used for the 2420 case: 2967
+2420 frames 2380-2400 where any feasible setting differs from legacy: 2391, 2392, 2393, 2394, 2395, 2396, 2397, 2398, 2399, 2400
+selected setting: g0=0.25 v=0 s=1.75 K=10 c=0.1 N=off
+frames accepted through the rescue tier, per clip: IMG_2412 2, IMG_2416 24, IMG_2417 0, IMG_2419 10, IMG_2420 7
+changed runs vs legacy: IMG_2412: 1 run(s); IMG_2416: 8 run(s); IMG_2419: 3 run(s); IMG_2420: 5 run(s)

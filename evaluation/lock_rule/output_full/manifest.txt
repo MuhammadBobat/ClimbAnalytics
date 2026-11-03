@@ -1,0 +1,92 @@
+Lock-rule evaluation manifest (evaluation/lock_rule/lock_manifest.py)
+date: 2026-11-03
+decisions: DECISIONS.md D-024 (failure), D-027 (proposed rule); nothing here is adopted
+
+== What was run
+1. cache_boxes.py: YOLOv8n person boxes at conf >= 0.05 for every frame of the five clips (validation/box_cache/).
+2. replay_check.py: the legacy rule on the cache reproduced validation/output_full (box columns and n_person_boxes) on all 5,886 frames, 0 mismatches (replay_check.txt).
+3. sweep_lock_rule.py: full factorial of the rule family on the cache; hard filters (i) IMG_2419 592-614 has no wrong frame against the author-CONFIRMED reference track (reference_track_2419.csv), (ii) IMG_2417 identical to legacy, (iii) first 100 frames unchanged on every frame the legacy rule tracked (the literal 'identical' count is also reported).
+4. simulate_gaps.py: climber hidden in place in real cached boxes for L in 5, 10, 20, 40, 80 frames, trial starts every 50 frames from 20, margin 10 frames, hide IoU 0.3, re-acquisition IoU 0.5. LIMITATION: the climber never reappears elsewhere; the clips contain no real gap longer than 8 frames.
+5. select_setting.py: the author's selection order (stated 2026-11-03, AFTER the stage-2 results were seen; NOT pre-registered): a) hard filters; b) zero accepted non-climber boxes at every hide length and zero 2419 wrong frames; c) most correct 2419-window frames, then highest re-acquisition at 80 frames; d) largest margin, then fewest components. Tie-break between K = 1 and K = 10 (mine, confirmed by the author as K = 10): higher total re-acquisition.
+6. make_lists_and_sheets.py, reference_track_sheet.py: review lists and contact sheets (sheets gitignored).
+7. bytetrack_reference.py: one untuned ByteTrack run (reference only).
+
+== Grids (sweep_lock_rule.GRID)
+g0: ['off', 0.25, 0.5, 0.75, 1.0]
+v: [0.0, 0.02, 0.05, 0.1]
+s: ['off', 1.75, 2.5, 3.5]
+k: [1, 10, 30]
+c: ['off', 0.3, 0.2, 0.1, 0.05]
+n: ['off', 10, 20, 40]
+margin constants: failure centre distance 0.925 h, failure height ratio 3.9, failure gap 5 frames; legitimate bounds in legit_ranges.txt
+
+== Selection result
+Selection order applied (author, 2026-11-03; chosen AFTER the stage-2 results, not pre-registered).
+settings in the grid: 4039; pass a) hard filters: 2967 (literal first-100 filter: 435); pass b) as well (zero accepted non-climber boxes at every hide length, pooled over the clips, and zero 2419 wrong frames): 47
+
+== Frame exclusion file (unchanged; the IMG_2419 entry stays until the author adopts the rule)
+# Frames excluded from gap statistics (analyze_occlusion_gaps.py --exclusions). Not footage edits: the keypoint data is untouched.
+# An excluded frame is treated like a dropped frame for joint-level counts (no observation, runs do not continue across it) but is reported separately.
+# Finding (2026-10-28, from validation/output_full/ and viewed frame 605): the ONLY confirmed wrong-person lock is IMG_2419 frames 597-614. Extra person boxes elsewhere are mostly holds, partial people or duplicate boxes; the chosen box was the climber. IMG_2419 frames 592-596 are a lost climber box (detector drop), not a wrong lock.
+# Mechanism: validate_vitpose.py's select_person_box takes the box nearest the previous centre with no distance limit, so after the climber box dropped out a bystander box was accepted, and the choice then reinforced itself (nearest to the bystander's own last position) until the bystander left the detections. Fix options are in the DECISIONS.md tracking entry (not decided here).
+video,start_frame,end_frame,reason
+IMG_2419.MOV,597,614,wrong-person lock (bystander on the mat); climber box dropped for 592-596 and was available again by frame 605
+
+== Code (SHA-256 of each file) and git state
+git HEAD: 8e3dc405974d3ebe504c765fbf0982815d6dcc3f
+uncommitted changes to these files when written: ?? evaluation/lock_rule/bytetrack_reference.py; ?? evaluation/lock_rule/cache_boxes.py; ?? evaluation/lock_rule/lock_common.py; ?? evaluation/lock_rule/lock_manifest.py; ?? evaluation/lock_rule/make_lists_and_sheets.py; ?? evaluation/lock_rule/reference_track_sheet.py; ?? evaluation/lock_rule/replay_check.py; ?? evaluation/lock_rule/select_setting.py; ?? evaluation/lock_rule/simulate_gaps.py; ?? evaluation/lock_rule/sweep_lock_rule.py
+person_lock.py: 972a72f4e0968d46ee815f46dffe14ff1109b8439f80042f735b038ae7a83950
+validation/validate_vitpose.py: a944b866123e1f0bab1278a4edd5bdb9094eaec6aad34deffda8fe14981d424b
+evaluation/lock_rule/bytetrack_reference.py: 958cb509ec3de772a425f2f958adb67dbae03c29593acd6640e8006997628359
+evaluation/lock_rule/cache_boxes.py: 553fb81a5570cd1dca35c08d2f620b210164ccce837b4ff9591f157d7d273151
+evaluation/lock_rule/lock_common.py: a32375120e9eb441b4171e9d9ea4b9da2cf91cfba9872129c4825379d03721ba
+evaluation/lock_rule/lock_manifest.py: 020738b804ea1ad660e95d1c08229149c8e2e6eab7d8b2e65fa46bd565526f66
+evaluation/lock_rule/make_lists_and_sheets.py: 7389ee9114e02cd16cbb20d885be9ffb8f7d7e0a35ab9a899555587f5d09eb89
+evaluation/lock_rule/reference_track_sheet.py: 5dba7fa583c5d62b9c79d39cb6e30ef97f30f6322ed4e2901a76d67d8661d74f
+evaluation/lock_rule/replay_check.py: d15a98c467c1fca7255016a058feabcc95050b6df2cdecf9b5e58270f03e4811
+evaluation/lock_rule/select_setting.py: 80c601d7f044b1da54c9e5fb77c8443a6326d62b43e030eccc8e3d46fc1e22c6
+evaluation/lock_rule/simulate_gaps.py: 37a078f80be9c66e6f69f74330315225f45ab1d9d3773ccadb84afb7c4825137
+evaluation/lock_rule/sweep_lock_rule.py: a41d0c7d9e854202196620778647e44ee2a4a77b5b59e82bbd2baaceb6342e30
+
+== Inputs (SHA-256)
+box cache manifest: validation/box_cache/manifest.txt (clips, detector weights, versions)
+validation/box_cache/IMG_2412_boxes.csv: 0cae7b83786fbc07cb69d346863321df3b15b7d177ad7a0b49a61c293b5b447b
+validation/box_cache/IMG_2416_boxes.csv: dc1ea116b036fda9adbf47b7f8372afc261d93483296c5c0c5e6cf027ba8027f
+validation/box_cache/IMG_2417_boxes.csv: a3f803cb493b8ba13bc9e38f391c324dc2f3635a9f62fdc41cff40a269d694b2
+validation/box_cache/IMG_2419_boxes.csv: 8ff85e0e92fd824b97686cb037fe71eb0e007e6c7d93d54fe79a837e8095e5cc
+validation/box_cache/IMG_2420_boxes.csv: cb5d012e32ada1f13992003a09bd1fea7b4075b635f22ae796ef31c5451d2137
+validation/box_cache/manifest.txt: c034c3f947a6e15ab894017784630d0c3c0cd541197a2b5c154d83c51ba2fde3
+
+== Outputs (SHA-256)
+evaluation/lock_rule/output_full/bytetrack_boxes_IMG_2412.csv: a4a3561d68a1dfbf2474944c1ada582eefaadc72e8b11aefd5e5310f15ece884
+evaluation/lock_rule/output_full/bytetrack_boxes_IMG_2416.csv: 7e43da5bea8bd8a07f18302eaeef5a795ace8e218e46af635e4098c5588fbe49
+evaluation/lock_rule/output_full/bytetrack_boxes_IMG_2417.csv: 8cd86f5d081508d9ef3abfb3dd882ea8a8bf22971bac3a1a74bbfb1b4a290745
+evaluation/lock_rule/output_full/bytetrack_boxes_IMG_2419.csv: aff8e7799f688c21f2cbf9579f1fabe7524cd34c77b70923362f3acf7e3bbb96
+evaluation/lock_rule/output_full/bytetrack_boxes_IMG_2420.csv: 5e2622a0753f1d8d5ff72ed685f606a8294f16de1bc3e19beb1256683f1d7d04
+evaluation/lock_rule/output_full/bytetrack_manifest.txt: cf7c6565f33c1e38907eb28a576032ca70a8bced400afb7e58fe3f2f1742e620
+evaluation/lock_rule/output_full/bytetrack_summary.csv: 47e6c7f6d9c3e799d0118394539f1ace45e8ef8c8b64eb7cc41b23949c8fc622
+evaluation/lock_rule/output_full/case_2419_585_630.csv: d8886e44ebe0e2ebf9a1e0bcddc7203d0bbeef1a074f299c0cf5b6612cbc942a
+evaluation/lock_rule/output_full/case_2420_2380_2400.csv: 611db467c472e77170749ac45e7998b0595b42ea11172e2b6f6ddf4b2824e825
+evaluation/lock_rule/output_full/changed_runs.csv: f90cc1684b93794ae79a8c8e3c86749d1412085702db373d178851cf54794574
+evaluation/lock_rule/output_full/feasible_summary.txt: 4632839fe7ba85fdc06b08ce1a2b5df97b855953daba7d671a8af9db8111caa4
+evaluation/lock_rule/output_full/legit_ranges.txt: f3b6a1b84b2edac753bae71fecd015037681e3458285d1934277d8616629bb1e
+evaluation/lock_rule/output_full/lists_manifest.txt: d5b225faf8c0eb5659489867b708da2904ee1eb4e8b36ab4e00e79cf349618f4
+evaluation/lock_rule/output_full/multibox_frames.csv: bbfd3746ef1a3c0ac91c1a7556338c6b824aebd6ed9685839464eced1abf6d25
+evaluation/lock_rule/output_full/multibox_frames_summary.csv: ccc3d67c147f60ed8131afc37ba9cbed5872b9dbd471c6f1b03c9b91e8d2db89
+evaluation/lock_rule/output_full/reference_track_2419.csv: fffb56f352ab33eb6f316838861b9db68d2528615ed219bb25f867a19b1abe83
+evaluation/lock_rule/output_full/replay_check.txt: 7381d46d616331c567f1c85ad20f51dc0bad15f442f270ecbd00c1cb56dd8304
+evaluation/lock_rule/output_full/selected_setting.json: be3e14eb0fa2ddbb1982b990939c8dfa6d5526c612bd2e527a44e5999280ccd1
+evaluation/lock_rule/output_full/selection.txt: d027a56116b3c7c02374b634f62412c43e57bc31c52e0d8ce947c9ffb954ffba
+evaluation/lock_rule/output_full/selection_neighbours.csv: 2bf7bc7b3bcdea0464d021cf1f2d648d2fe0b60d7f61b1dec0a637e294a2422b
+evaluation/lock_rule/output_full/sim_results.csv: 2f3daf68b019073e40cdd46a128b6dc3a5bd34ef4c7f1443bc283af6a5351090
+evaluation/lock_rule/output_full/sim_summary.csv: a45e0fd2309cd6551a56fe7f282299b35bf782295565bb9bfb967b09b156db7f
+evaluation/lock_rule/output_full/sweep_settings.csv: bdf8cd02b538970d716072bb9bc1c19c834b8f5da1a501265cd59cbe10c97251
+
+== Environment
+torch: 2.11.0
+transformers: 5.14.1
+ultralytics: 8.4.108
+opencv-python: 5.0.0.93
+numpy: 2.2.6
+Pillow: 12.0.0
+huggingface_hub: 1.25.1

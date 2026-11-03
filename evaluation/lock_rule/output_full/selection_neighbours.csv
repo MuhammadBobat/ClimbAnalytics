@@ -1,0 +1,12 @@
+role,setting,feasible,passes_b,ok_2417,ok_first100,ok_first100_literal,win_correct,win_wrong,win_dropped,win_rescued,accept_L5,accept_L10,accept_L20,accept_L40,accept_L80,reacq5_L5,reacq5_L10,reacq5_L20,reacq5_L40,reacq5_L80,margin,components,changed_other_clips,rescued_total,dropped_total,n_L5,n_L10,n_L20,n_L40,n_L80
+selected,g0=0.25 v=0 s=1.75 K=10 c=0.1 N=off,True,True,True,True,False,21,0,2,8,0,0,0,0,0,111,109,106,104,88,1.064,3,33,43,2,111,109,106,104,96
+g0 down -> off,g0=off v=0 s=1.75 K=10 c=0.1 N=off,True,False,True,True,False,21,0,2,8,13,14,16,24,30,111,108,106,103,93,1.064,2,33,43,2,111,109,106,104,96
+g0 up -> 0.5,g0=0.5 v=0 s=1.75 K=10 c=0.1 N=off,True,False,True,True,False,21,0,2,8,3,5,6,10,12,111,108,104,100,91,1.064,3,33,43,2,111,109,106,104,96
+v up -> 0.02,g0=0.25 v=0.02 s=1.75 K=10 c=0.1 N=off,True,False,True,True,False,21,0,2,8,0,2,6,21,29,111,107,101,88,81,1.064,3,33,43,2,111,109,106,104,96
+s down -> off,g0=0.25 v=0 s=off K=10 c=0.1 N=off,True,False,True,True,False,21,0,2,8,2,3,3,5,7,111,109,105,102,82,1.221,2,33,43,2,111,109,106,104,96
+s up -> 2.5,g0=0.25 v=0 s=2.5 K=10 c=0.1 N=off,True,False,True,True,False,21,0,2,8,0,1,1,2,3,111,109,106,103,85,1.221,3,33,43,2,111,109,106,104,96
+k down -> 1,g0=0.25 v=0 s=1.75 K=1 c=0.1 N=off,True,True,True,True,False,21,0,2,8,0,0,0,0,0,111,109,106,103,88,1.064,3,33,43,2,111,109,106,104,96
+k up -> 30,g0=0.25 v=0 s=1.75 K=30 c=0.1 N=off,False,False,True,False,False,21,0,2,8,0,0,0,0,1,111,109,106,104,88,1.064,3,47,43,16,111,109,106,104,96
+c down -> 0.2,g0=0.25 v=0 s=1.75 K=10 c=0.2 N=off,True,True,True,True,False,18,0,5,5,0,0,0,0,0,111,109,106,104,88,1.064,3,31,38,7,111,109,106,104,96
+c up -> 0.05,g0=0.25 v=0 s=1.75 K=10 c=0.05 N=off,True,False,True,True,False,23,0,0,10,2,2,1,1,1,111,108,106,104,88,1.064,3,33,45,0,111,109,106,104,96
+n up -> 10,g0=0.25 v=0 s=1.75 K=10 c=0.1 N=10,True,False,True,True,False,21,0,2,8,0,0,5,7,9,111,108,101,98,90,1.064,4,33,43,2,111,109,106,104,96

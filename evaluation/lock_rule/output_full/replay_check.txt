@@ -1,0 +1,9 @@
+Replay-equals-baseline check (evaluation/lock_rule/replay_check.py)
+legacy rule on validation/box_cache/ vs validation/output_full/*_keypoints.csv
+result: PASS
+
+clip=IMG_2412, cache_frames=718, baseline_frames_with_box=716, legacy_frames_with_box=716, box_mismatch=0, n_person_boxes_mismatch=0, extra_box_where_baseline_has_none=0, baseline_frames_beyond_cache=0, first_bad_frame=None
+clip=IMG_2416, cache_frames=917, baseline_frames_with_box=893, legacy_frames_with_box=893, box_mismatch=0, n_person_boxes_mismatch=0, extra_box_where_baseline_has_none=0, baseline_frames_beyond_cache=0, first_bad_frame=None
+clip=IMG_2417, cache_frames=980, baseline_frames_with_box=980, legacy_frames_with_box=980, box_mismatch=0, n_person_boxes_mismatch=0, extra_box_where_baseline_has_none=0, baseline_frames_beyond_cache=0, first_bad_frame=None
+clip=IMG_2419, cache_frames=850, baseline_frames_with_box=843, legacy_frames_with_box=843, box_mismatch=0, n_person_boxes_mismatch=0, extra_box_where_baseline_has_none=0, baseline_frames_beyond_cache=0, first_bad_frame=None
+clip=IMG_2420, cache_frames=2421, baseline_frames_with_box=2414, legacy_frames_with_box=2414, box_mismatch=0, n_person_boxes_mismatch=0, extra_box_where_baseline_has_none=0, baseline_frames_beyond_cache=0, first_bad_frame=None

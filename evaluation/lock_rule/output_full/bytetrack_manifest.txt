@@ -1,0 +1,12 @@
+ByteTrack reference run manifest (evaluation/lock_rule/bytetrack_reference.py)
+untuned: ultralytics model.track(stream=True, classes=[0], tracker='bytetrack.yaml'), library defaults
+tracker config read at run time: {'tracker_type': 'bytetrack', 'track_high_thresh': 0.25, 'track_low_thresh': 0.1, 'new_track_thresh': 0.25, 'track_buffer': 30, 'match_thresh': 0.8, 'fuse_score': True}
+track_buffer used for re-acquisition: 30
+device: mps
+weights: validation/weights/yolov8n.pt sha256 f59b3d833e2ff32e194b5bb8e08d211dc7c5bdf144b90d2c8412c47ccfc83b36
+climber = ID of the highest-confidence tracked box on the first frame with one; re-acquired the same way after track_buffer consecutive frames without that ID
+reference track for the 2419 window is PROVISIONAL (reference_track_2419.csv)
+git HEAD: 49f9b07d649e8e993b5ac51f6f9038ae86179d13
+script modified since HEAD: yes
+ultralytics: 8.4.108
+torch: 2.11.0

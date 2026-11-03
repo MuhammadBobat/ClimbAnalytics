@@ -1,0 +1,6 @@
+clip,n_frames,n_dropped,longest_drop,gained_vs_legacy,lost_vs_legacy,box_differs_from_legacy_iou_lt_0_9,jump_max,jump_p99,n_jump_over_0_3,n_hratio_flags,win2419_correct,win2419_wrong,win2419_dropped
+IMG_2412,718,20,14,1,19,128,0.1093,0.0442,0,0,,,
+IMG_2416,917,51,30,24,51,306,0.0964,0.0487,0,0,,,
+IMG_2417,980,0,0,0,0,132,0.0834,0.0380,0,0,,,
+IMG_2419,850,42,30,7,42,186,0.1261,0.0394,0,0,20,0,3
+IMG_2420,2421,0,0,7,0,210,0.1183,0.0342,0,0,,,

@@ -1,0 +1,33 @@
+Selection order applied (author, 2026-11-03; chosen AFTER the stage-2 results, not pre-registered).
+settings in the grid: 4039; pass a) hard filters: 2967 (literal first-100 filter: 435); pass b) as well (zero accepted non-climber boxes at every hide length, pooled over the clips, and zero 2419 wrong frames): 47
+
+ordering key: most 2419 window correct, then reacq<=5 at L=80, then reacq<=10 at L=80, then margin, then fewest components
+settings tied for first on the whole key: 2
+  g0=0.25 v=0 s=1.75 K=1 c=0.1 N=off | margin 1.064 | components 3
+  g0=0.25 v=0 s=1.75 K=10 c=0.1 N=off | margin 1.064 | components 3
+
+Do settings that pass b) need v or N?
+  best (2419 correct, reacq5@80, reacq10@80) over all passing: (21, 88, 89)
+  best over passing settings with v = 0 and N off: (21, 88, 89)
+  passing settings with v > 0: 0; with N set: 0
+  passing b) by g0: g0=0.25: 29, g0=0.5: 18
+  passing b) by s: s=1.75: 11, s=2.5: 14, s=3.5: 11, s=off: 11
+  passing b) by K: K=1: 15, K=10: 19, K=30: 13
+  passing b) by c: c=0.1: 2, c=0.2: 5, c=0.3: 18, c=off: 22
+
+tie-break used (not part of the author's order): higher total reacq<=5 over all hide lengths, then grid order; g0=0.25 v=0 s=1.75 K=10 c=0.1 N=off: 518, g0=0.25 v=0 s=1.75 K=1 c=0.1 N=off: 517
+SELECTED: g0=0.25 v=0 s=1.75 K=10 c=0.1 N=off
+
+selected setting and neighbours (each parameter one grid step): see selection_neighbours.csv
+  selected                                       | g0=0.25 v=0 s=1.75 K=10 c=0.1 N=off | feas True b True | 2419 c/w/d/r 21/0/2/8 | accept@L [0, 0, 0, 0, 0] | reacq5@L [111, 109, 106, 104, 88] | margin 1.06 | comp 3
+  g0 down -> off                                 | g0=off v=0 s=1.75 K=10 c=0.1 N=off | feas True b False | 2419 c/w/d/r 21/0/2/8 | accept@L [13, 14, 16, 24, 30] | reacq5@L [111, 108, 106, 103, 93] | margin 1.06 | comp 2
+  g0 up -> 0.5                                   | g0=0.5 v=0 s=1.75 K=10 c=0.1 N=off | feas True b False | 2419 c/w/d/r 21/0/2/8 | accept@L [3, 5, 6, 10, 12] | reacq5@L [111, 108, 104, 100, 91] | margin 1.06 | comp 3
+  v up -> 0.02                                   | g0=0.25 v=0.02 s=1.75 K=10 c=0.1 N=off | feas True b False | 2419 c/w/d/r 21/0/2/8 | accept@L [0, 2, 6, 21, 29] | reacq5@L [111, 107, 101, 88, 81] | margin 1.06 | comp 3
+  s down -> off                                  | g0=0.25 v=0 s=off K=10 c=0.1 N=off | feas True b False | 2419 c/w/d/r 21/0/2/8 | accept@L [2, 3, 3, 5, 7] | reacq5@L [111, 109, 105, 102, 82] | margin 1.22 | comp 2
+  s up -> 2.5                                    | g0=0.25 v=0 s=2.5 K=10 c=0.1 N=off | feas True b False | 2419 c/w/d/r 21/0/2/8 | accept@L [0, 1, 1, 2, 3] | reacq5@L [111, 109, 106, 103, 85] | margin 1.22 | comp 3
+  k down -> 1                                    | g0=0.25 v=0 s=1.75 K=1 c=0.1 N=off | feas True b True | 2419 c/w/d/r 21/0/2/8 | accept@L [0, 0, 0, 0, 0] | reacq5@L [111, 109, 106, 103, 88] | margin 1.06 | comp 3
+  k up -> 30                                     | g0=0.25 v=0 s=1.75 K=30 c=0.1 N=off | feas False b False | 2419 c/w/d/r 21/0/2/8 | accept@L [0, 0, 0, 0, 1] | reacq5@L [111, 109, 106, 104, 88] | margin 1.06 | comp 3
+  c down -> 0.2                                  | g0=0.25 v=0 s=1.75 K=10 c=0.2 N=off | feas True b True | 2419 c/w/d/r 18/0/5/5 | accept@L [0, 0, 0, 0, 0] | reacq5@L [111, 109, 106, 104, 88] | margin 1.06 | comp 3
+  c up -> 0.05                                   | g0=0.25 v=0 s=1.75 K=10 c=0.05 N=off | feas True b False | 2419 c/w/d/r 23/0/0/10 | accept@L [2, 2, 1, 1, 1] | reacq5@L [111, 108, 106, 104, 88] | margin 1.06 | comp 3
+  n up -> 10                                     | g0=0.25 v=0 s=1.75 K=10 c=0.1 N=10 | feas True b False | 2419 c/w/d/r 21/0/2/8 | accept@L [0, 0, 5, 7, 9] | reacq5@L [111, 108, 101, 98, 90] | margin 1.06 | comp 4
+hide-trial counts n per L: [111, 109, 106, 104, 96]
