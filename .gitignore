@@ -264,3 +264,6 @@ evaluation/lock_rule/sheets/
 
 # Gated-lock pipeline run (DECISIONS.md D-027, proposed); its report and manifest copy are in evaluation/lock_rule/output_lock1/
 validation/output_full_lock1/
+
+# gap-filling outputs (regenerable): evaluation/3.2/run_gap_filling.py
+evaluation/3.2/**/*_filled.csv
