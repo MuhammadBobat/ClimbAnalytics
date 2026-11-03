@@ -30,11 +30,12 @@ not overwritten by accident. n_person_boxes (people the box detector found that
 frame, before the single-climber selection) is the LAST column of both the
 keypoints and flags CSVs.
 
---lock-rule legacy|gated (default legacy). legacy is today's select_person_box,
-unchanged, and writes exactly the files described above. gated is the PROPOSED
-single-climber lock of DECISIONS.md D-024 / D-027 (person_lock.py: distance gate,
-size check, low-confidence rescue tier with the values in GATED_LOCK_PARAMS) and is
-OFF unless asked for. Its keypoints and flags CSVs keep the same columns (n_person_boxes
+--lock-rule gated|legacy (default gated, adopted by the author on 2026-11-03, DECISIONS.md
+D-027: implemented, not validated). gated is the single-climber lock of D-024 / D-027
+(person_lock.py: distance gate, size check, low-confidence rescue tier with the values in
+GATED_LOCK_PARAMS). legacy is the earlier select_person_box, unchanged, and writes exactly
+the files described above (it is how validation/output/ and validation/output_full/ were
+made). The gated rule's keypoints and flags CSVs keep the same columns (n_person_boxes
 still counts boxes at or above --bbox-conf) and it additionally writes, per clip,
 <clip>_lock.csv (every frame where the gate or size check rejected the box the legacy
 rule would have chosen from the same state: the rejected box, why, and what the rule did
@@ -90,9 +91,10 @@ VITPOSE_COCO_DATASET_INDEX = 0
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
 
-# Proposed single-climber lock (DECISIONS.md D-027, status proposed): the setting selected from the stage-2
-# sweep by the author's selection order, which was chosen AFTER seeing the stage-2 results. Used only with
-# --lock-rule gated. conf_main is --bbox-conf. Not a validated threshold set (five clips, one gym, one real failure).
+# Single-climber lock (DECISIONS.md D-027, implemented 2026-11-03, not validated): the setting selected from the
+# stage-2 sweep by the author's selection order, which was chosen AFTER seeing the stage-2 results. Used with
+# --lock-rule gated (the default). conf_main is --bbox-conf. Not a validated threshold set (five clips, one gym,
+# one real failure); to be checked on new footage through the <clip>_lock.csv rejection log.
 GATED_LOCK_PARAMS = dict(gate_g0=0.25, gate_v=0.0, size_s=1.75, size_k=10, conf_rescue=0.1, release_n=None)
 LOCK_COLUMNS = [
     "video", "frame_idx", "timestamp_s", "rejected_x", "rejected_y", "rejected_w", "rejected_h", "rejected_conf",
@@ -413,7 +415,7 @@ def process_video(
     }
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--input-dir", type=Path, default=Path("footage/test"))
     parser.add_argument("--output-dir", type=Path, default=Path("validation/output"))
@@ -421,13 +423,17 @@ def main():
                          help="YOLOv8n person-detection confidence threshold")
     parser.add_argument("--device", type=str, default=None,
                          help="cpu / mps / cuda — auto-detected if not set")
-    parser.add_argument("--lock-rule", choices=("legacy", "gated"), default="legacy",
-                         help="single-climber lock: legacy (today's rule, default) or gated (proposed, D-027)")
+    parser.add_argument("--lock-rule", choices=("gated", "legacy"), default="gated",
+                         help="single-climber lock: gated (default, D-027) or legacy (the earlier select_person_box)")
     parser.add_argument("--force", action="store_true",
                          help="allow writing into an output dir that already has a summary.csv")
     parser.add_argument("--max-frames", type=int, default=None,
                          help="limit frames per video, for a quick smoke test")
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
 
     if args.device:
         device = args.device
@@ -469,7 +475,7 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     if args.lock_rule == "gated":
         (args.output_dir / "run_info.txt").write_text(
-            "lock rule: gated (DECISIONS.md D-027, proposed)\n"
+            "lock rule: gated (DECISIONS.md D-027, implemented 2026-11-03, not validated)\n"
             f"parameters: conf_main={args.bbox_conf} {GATED_LOCK_PARAMS}\n"
             f"max frames: {args.max_frames if args.max_frames is not None else 'all'}\n")
 
