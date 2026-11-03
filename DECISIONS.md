@@ -441,6 +441,7 @@ Train one **YOLOv8n-seg** model (`ultralytics`), polygon-annotated in Roboflow u
 **Status:** proposed
 
 **Addendum (2026-11-03):** a candidate fix for this failure is logged as D-027 (proposed; not adopted). This entry's text above is unchanged, and the `validation/frame_exclusions.csv` entry for IMG_2419 stays until D-027 is adopted.
+**Addendum (2026-11-03, later the same day):** D-027 was adopted (implemented, not validated); see its adoption addendum. The status of this entry is unchanged.
 
 ## D-025: Full 14-joint segment-model CoM not adopted as it stands
 **Date:** 2026-10-28
@@ -545,4 +546,6 @@ Selection among the boxes that pass stays "nearest to the last accepted centre";
 8. *Pipeline timing is unexplained:* IMG_2420 took 1,367 s in the gated run against 540 s in the legacy run; the other clips took about as long as before. The cause is not recorded.
 **Run record:** `validation/validate_vitpose.py --lock-rule gated --output-dir validation/output_full_lock1` from a clean tree at commit `dedb76d` (device mps; manifest `evaluation/lock_rule/output_lock1/run_manifest.txt`); evaluation record `evaluation/lock_rule/output_full/manifest.txt`; code `person_lock.py` (commit `8e3dc40`) and `evaluation/lock_rule/` (commit `dedb76d`). No existing output folder was written.
 **Source(s):** no literature source — engineering heuristic from this project's own footage, validate empirically (D-004 method). ByteTrack (ultralytics) as the D-024 option 5 reference only.
-**Status:** proposed
+**Status:** implemented (not validated) — 2026-11-03: adopted by the author on five clips; to be checked on the 4.2 footage through the rejection log.
+
+**Addendum (2026-11-03) — adoption:** the author adopted the rule. `validate_vitpose.py` now runs it by default (`--lock-rule gated`, `GATED_LOCK_PARAMS` unchanged: g0 0.25, v 0, s 1.75, K 10, rescue floor 0.1, N off; commit `cc990e3`); the earlier rule stays available as `--lock-rule legacy` and both modes are tested (`tests/test_validate_lock_rule.py`, which also pins the parameters). The sentence "Proposed, not adopted" in the Decision above describes the entry as first written, before adoption. Adoption is on five clips of one gym; it is not a validation. The rejection log (`<clip>_lock.csv`, the frames where the gate or size check rejected the box the earlier rule would have chosen) is the way to check the rule on new footage (the author's 4.2 footage); the limitations above all still apply, in particular that a climber who moves farther than the gate allows during a long gap is not recovered (permanent loss with N off) and that the rescue tier tracks weak boxes.
