@@ -1,0 +1,55 @@
+clip,quantity,old,new
+IMG_2412,dropped,2,0
+IMG_2412,excluded,0,0
+IMG_2412,used,716,718
+IMG_2412,drop_events,1,0
+IMG_2412,longest,2,0
+IMG_2412,events17,134,134
+IMG_2412,pipeline_events,27,27
+IMG_2412,bins,"(23, 3, 1)","(23, 3, 1)"
+IMG_2412,low,98,98
+IMG_2416,dropped,24,0
+IMG_2416,excluded,0,0
+IMG_2416,used,893,917
+IMG_2416,drop_events,8,0
+IMG_2416,longest,8,0
+IMG_2416,events17,97,98
+IMG_2416,pipeline_events,28,28
+IMG_2416,bins,"(23, 5, 0)","(23, 5, 0)"
+IMG_2416,low,72,72
+IMG_2417,dropped,0,0
+IMG_2417,excluded,0,0
+IMG_2417,used,980,980
+IMG_2417,drop_events,0,0
+IMG_2417,longest,0,0
+IMG_2417,events17,117,117
+IMG_2417,pipeline_events,20,20
+IMG_2417,bins,"(13, 5, 2)","(13, 5, 2)"
+IMG_2417,low,118,118
+IMG_2419,dropped,7,2
+IMG_2419,excluded,18,0
+IMG_2419,used,825,848
+IMG_2419,drop_events,3,1
+IMG_2419,longest,5,2
+IMG_2419,events17,93,103
+IMG_2419,pipeline_events,18,21
+IMG_2419,bins,"(16, 2, 0)","(19, 2, 0)"
+IMG_2419,low,34,39
+IMG_2420,dropped,7,0
+IMG_2420,excluded,0,0
+IMG_2420,used,2414,2421
+IMG_2420,drop_events,5,0
+IMG_2420,longest,3,0
+IMG_2420,events17,117,115
+IMG_2420,pipeline_events,22,24
+IMG_2420,bins,"(15, 7, 0)","(17, 7, 0)"
+IMG_2420,low,75,78
+ALL,dropped,40,2
+ALL,excluded,18,0
+ALL,used,5828,5884
+ALL,drop_events,17,1
+ALL,longest,8,2
+ALL,events17,558,567
+ALL,pipeline_events,115,120
+ALL,bins,"(90, 22, 3)","(95, 22, 3)"
+ALL,low,397,405
