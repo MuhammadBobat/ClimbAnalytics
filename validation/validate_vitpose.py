@@ -30,6 +30,17 @@ not overwritten by accident. n_person_boxes (people the box detector found that
 frame, before the single-climber selection) is the LAST column of both the
 keypoints and flags CSVs.
 
+--lock-rule legacy|gated (default legacy). legacy is today's select_person_box,
+unchanged, and writes exactly the files described above. gated is the PROPOSED
+single-climber lock of DECISIONS.md D-024 / D-027 (person_lock.py: distance gate,
+size check, low-confidence rescue tier with the values in GATED_LOCK_PARAMS) and is
+OFF unless asked for. Its keypoints and flags CSVs keep the same columns (n_person_boxes
+still counts boxes at or above --bbox-conf) and it additionally writes, per clip,
+<clip>_lock.csv (every frame where the gate or size check rejected the box the legacy
+rule would have chosen from the same state: the rejected box, why, and what the rule did
+instead, for review on new footage), <clip>_lock_frames.csv (the tier each frame was
+accepted through: first / main / rescue / release / none) and run_info.txt.
+
 Requirements: see validation/requirements.txt
 """
 
@@ -46,6 +57,10 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from person_lock import (  # noqa: E402  (pure Python, repo root)
+    Box, LockParams, LockState, explain_rejection, select_climber_box)
 
 # --------------------------------------------------------------------------
 # QA/visual-inspection defaults — NOT modelling thresholds.
@@ -74,6 +89,17 @@ DEFAULT_MAX_LOW_CONF_KEYPOINTS = 5     # flag frame if this many (of 17) keypoin
 VITPOSE_COCO_DATASET_INDEX = 0
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
+
+# Proposed single-climber lock (DECISIONS.md D-027, status proposed): the setting selected from the stage-2
+# sweep by the author's selection order, which was chosen AFTER seeing the stage-2 results. Used only with
+# --lock-rule gated. conf_main is --bbox-conf. Not a validated threshold set (five clips, one gym, one real failure).
+GATED_LOCK_PARAMS = dict(gate_g0=0.25, gate_v=0.0, size_s=1.75, size_k=10, conf_rescue=0.1, release_n=None)
+LOCK_COLUMNS = [
+    "video", "frame_idx", "timestamp_s", "rejected_x", "rejected_y", "rejected_w", "rejected_h", "rejected_conf",
+    "dist_over_h_ref", "allowance_over_h_ref", "h_ratio_to_ref", "check_failed", "gap_before",
+    "rule_outcome", "outcome_x", "outcome_y", "outcome_w", "outcome_h", "outcome_conf",
+]
+LOCK_FRAME_COLUMNS = ["video", "frame_idx", "tier", "gap_before", "n_boxes_main", "n_boxes_rescue", "reason"]
 
 # Standard 17-keypoint COCO order/names, as confirmed against the actual
 # loaded ViTPose checkpoint config (DECISIONS.md D-012) — do not assume this
@@ -260,6 +286,17 @@ def process_video(
     ])
 
     prev_center: tuple[float, float] | None = None
+    gated = args.lock_rule == "gated"
+    lock_params = lock_state = lock_file = lock_frames_file = lock_writer = lock_frames_writer = None
+    if gated:
+        lock_params = LockParams(conf_main=args.bbox_conf, **GATED_LOCK_PARAMS)
+        lock_state = LockState()
+        lock_file = open(output_dir / f"{stem}_lock.csv", "w", newline="")
+        lock_writer = csv.writer(lock_file)
+        lock_writer.writerow(LOCK_COLUMNS)
+        lock_frames_file = open(output_dir / f"{stem}_lock_frames.csv", "w", newline="")
+        lock_frames_writer = csv.writer(lock_frames_file)
+        lock_frames_writer.writerow(LOCK_FRAME_COLUMNS)
     frame_idx = 0
     n_missing = 0
     n_flagged = 0
@@ -276,12 +313,34 @@ def process_video(
 
         timestamp_s = frame_idx / fps
 
-        boxes = detect_person_boxes(detector, frame, args.bbox_conf, device)
-        box = select_person_box(boxes, prev_center)
+        if not gated:
+            boxes = detect_person_boxes(detector, frame, args.bbox_conf, device)
+            box = select_person_box(boxes, prev_center)
+            n_boxes = len(boxes)
+        else:
+            boxes = detect_person_boxes(detector, frame, lock_params.conf_rescue, device)
+            n_boxes = sum(1 for b in boxes if b.conf >= args.bbox_conf)
+            lboxes = [Box(b.x, b.y, b.w, b.h, b.conf) for b in boxes]
+            rejection = explain_rejection(lboxes, lock_state, lock_params)
+            gap_before = lock_state.gap
+            chosen, lock_state, info = select_climber_box(lboxes, lock_state, lock_params)
+            box = None if chosen is None else PersonBox(chosen.x, chosen.y, chosen.w, chosen.h, chosen.conf)
+            lock_frames_writer.writerow([video_path.name, frame_idx, info.tier, gap_before, info.n_main,
+                                         info.n_rescue, info.reason])
+            if rejection is not None:
+                r = rejection.box
+                lock_writer.writerow([
+                    video_path.name, frame_idx, f"{timestamp_s:.3f}", f"{r.x:.1f}", f"{r.y:.1f}", f"{r.w:.1f}",
+                    f"{r.h:.1f}", f"{r.conf:.4f}", f"{rejection.dist_over_h_ref:.3f}",
+                    "" if rejection.allowance_over_h_ref is None else f"{rejection.allowance_over_h_ref:.3f}",
+                    f"{rejection.h_ratio:.3f}", rejection.check_failed, gap_before,
+                    info.tier if chosen is not None else "none"] +
+                    ([f"{chosen.x:.1f}", f"{chosen.y:.1f}", f"{chosen.w:.1f}", f"{chosen.h:.1f}", f"{chosen.conf:.4f}"]
+                     if chosen is not None else ["", "", "", "", ""]))
 
         if box is None:
             n_missing += 1
-            flag_writer.writerow([video_path.name, frame_idx, f"{timestamp_s:.3f}", "missing_detection", "", "", "", len(boxes)])
+            flag_writer.writerow([video_path.name, frame_idx, f"{timestamp_s:.3f}", "missing_detection", "", "", "", n_boxes])
             writer.write(draw_overlay(frame, None, None, None))
             frame_idx += 1
             continue
@@ -296,7 +355,7 @@ def process_video(
                 video_path.name, frame_idx, f"{timestamp_s:.3f}", kp_id, name,
                 f"{x:.2f}", f"{y:.2f}", f"{scores[kp_id]:.4f}",
                 f"{box.x:.1f}", f"{box.y:.1f}", f"{box.w:.1f}", f"{box.h:.1f}",
-                len(boxes),
+                n_boxes,
             ])
 
         mean_conf = float(np.mean(scores))
@@ -314,7 +373,7 @@ def process_video(
             n_flagged += 1
             flag_writer.writerow([
                 video_path.name, frame_idx, f"{timestamp_s:.3f}", "+".join(reasons),
-                f"{mean_conf:.4f}", f"{min_conf:.4f}", n_low_conf, len(boxes),
+                f"{mean_conf:.4f}", f"{min_conf:.4f}", n_low_conf, n_boxes,
             ])
 
         writer.write(draw_overlay(frame, box, keypoints, scores))
@@ -328,6 +387,9 @@ def process_video(
     writer.release()
     kp_file.close()
     flag_file.close()
+    if gated:
+        lock_file.close()
+        lock_frames_file.close()
 
     elapsed = time.time() - t_start
     mean_overall_conf = confidence_sum / confidence_count if confidence_count else float("nan")
@@ -359,6 +421,8 @@ def main():
                          help="YOLOv8n person-detection confidence threshold")
     parser.add_argument("--device", type=str, default=None,
                          help="cpu / mps / cuda — auto-detected if not set")
+    parser.add_argument("--lock-rule", choices=("legacy", "gated"), default="legacy",
+                         help="single-climber lock: legacy (today's rule, default) or gated (proposed, D-027)")
     parser.add_argument("--force", action="store_true",
                          help="allow writing into an output dir that already has a summary.csv")
     parser.add_argument("--max-frames", type=int, default=None,
@@ -399,7 +463,15 @@ def main():
         )
         sys.exit(1)
 
+    if args.lock_rule == "gated" and args.bbox_conf <= GATED_LOCK_PARAMS["conf_rescue"]:
+        print(f"--bbox-conf must be above the rescue floor {GATED_LOCK_PARAMS['conf_rescue']}.", file=sys.stderr)
+        sys.exit(1)
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    if args.lock_rule == "gated":
+        (args.output_dir / "run_info.txt").write_text(
+            "lock rule: gated (DECISIONS.md D-027, proposed)\n"
+            f"parameters: conf_main={args.bbox_conf} {GATED_LOCK_PARAMS}\n"
+            f"max frames: {args.max_frames if args.max_frames is not None else 'all'}\n")
 
     try:
         detector, pose_processor, pose_model = load_models(device)
