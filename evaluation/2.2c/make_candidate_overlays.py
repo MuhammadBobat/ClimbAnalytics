@@ -307,11 +307,11 @@ def build_manifest(windows, input_dir, top_csv, exclusions_path, footage_dir, fo
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--input-dir", type=Path, default=Path("validation/output_full"))
+    parser.add_argument("--input-dir", type=Path, default=Path("validation/output_full_lock1"))  # D-027: gated-lock run; earlier input was validation/output_full
     parser.add_argument("--footage-dir", type=Path, default=Path("footage/test"))
     parser.add_argument("--out-dir", type=Path, default=Path("evaluation/2.2c"))
     parser.add_argument("--windows-from", type=Path,
-                        default=Path("evaluation/2.2b/output_full/top_speed_differences.csv"))
+                        default=Path("evaluation/2.2b/output_full_lock1/top_speed_differences.csv"))
     parser.add_argument("--exclusions", type=Path, default=Path("validation/frame_exclusions.csv"))
     parser.add_argument("--sex", default="male")
     parser.add_argument("--pad", type=int, default=oc.PAD_FRAMES)

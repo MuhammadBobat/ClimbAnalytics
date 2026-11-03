@@ -61,8 +61,8 @@ manifest.txt, report.md), all built from the same event objects, so the tables a
 the report cannot disagree. Videos and raw keypoint CSVs are never copied there.
 
 Usage:
-    python validation/analyze_occlusion_gaps.py
-    python validation/analyze_occlusion_gaps.py --input-dir validation/output_full
+    python validation/analyze_occlusion_gaps.py          # default input: validation/output_full_lock1 (D-027)
+    python validation/analyze_occlusion_gaps.py --input-dir validation/output_full   # the earlier legacy-lock run
 """
 
 from __future__ import annotations
@@ -710,7 +710,8 @@ def render_report(all_stats: list[ClipGapStats]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--input-dir", type=Path, default=Path("validation/output"))
+    parser.add_argument("--input-dir", type=Path, default=Path("validation/output_full_lock1"),
+                         help="default: the gated-lock run (D-027); earlier runs: validation/output, validation/output_full")
     parser.add_argument("--footage-dir", type=Path, default=Path("footage/test"),
                          help="source videos, only used for the manifest checksums")
     parser.add_argument("--eval-dir", type=Path, default=Path("evaluation/3.1"),

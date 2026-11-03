@@ -79,7 +79,7 @@ def main() -> None:
     parser.add_argument("--clip", required=True, help="e.g. IMG_2420")
     parser.add_argument("--start", type=int, required=True)
     parser.add_argument("--end", type=int, required=True)
-    parser.add_argument("--input-dir", type=Path, default=Path("validation/output_full"))
+    parser.add_argument("--input-dir", type=Path, default=Path("validation/output_full_lock1"))  # D-027: gated-lock run; earlier input was validation/output_full
     parser.add_argument("--eval-dir", type=Path, default=Path("evaluation/2.2b"))
     parser.add_argument("--exclusions", type=Path, default=Path("validation/frame_exclusions.csv"))
     parser.add_argument("--sex", choices=SEX_TABLES, default="male")

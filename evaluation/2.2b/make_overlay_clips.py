@@ -242,7 +242,7 @@ def build_manifest(windows: list[dict], input_dir: Path, top_csv: Path, exclusio
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--input-dir", type=Path, default=Path("validation/output_full"))
+    parser.add_argument("--input-dir", type=Path, default=Path("validation/output_full_lock1"))  # D-027: gated-lock run; earlier input was validation/output_full
     parser.add_argument("--footage-dir", type=Path, default=Path("footage/test"))
     parser.add_argument("--eval-dir", type=Path, default=Path("evaluation/2.2b"))
     parser.add_argument("--exclusions", type=Path, default=Path("validation/frame_exclusions.csv"))

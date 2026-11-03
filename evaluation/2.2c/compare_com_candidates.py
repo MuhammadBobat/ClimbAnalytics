@@ -618,17 +618,18 @@ def run(input_dir: Path, exclusions_path: Path, sex: str):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--input-dir", type=Path, default=Path("validation/output_full"))
+    parser.add_argument("--input-dir", type=Path, default=Path("validation/output_full_lock1"))  # D-027: gated-lock run; earlier input was validation/output_full
     parser.add_argument("--footage-dir", type=Path, default=Path("footage/test"))
     parser.add_argument("--out-dir", type=Path, default=Path("evaluation/2.2c"))
     parser.add_argument("--exclusions", type=Path, default=Path("validation/frame_exclusions.csv"))
     parser.add_argument("--sex", choices=SEX_TABLES, default="male")
     parser.add_argument("--paper", type=Path, default=cm.DEFAULT_PAPER,
                         help="local copy of de Leva (1996), only its SHA-256 is recorded")
-    parser.add_argument("--regression-ref", type=Path, default=Path("evaluation/2.2b/output_full"),
+    parser.add_argument("--regression-ref", type=Path, default=Path("evaluation/2.2b/output_full_lock1"),
                         help="2.2b output folder whose A and F columns must be reproduced exactly")
-    parser.add_argument("--expect-coverage", default="5886,5828,5349",
-                        help="frames,A defined,F defined for the regression check ('' to skip)")
+    parser.add_argument("--expect-coverage", default="",
+                        help="frames,A defined,F defined for the regression check ('' to skip; the earlier "
+                             "validation/output_full run gave 5886,5828,5349)")
     args = parser.parse_args()
 
     if not list(args.input_dir.glob("*_keypoints.csv")):
