@@ -1,0 +1,40 @@
+Gap-filling run manifest (evaluation/3.2/run_gap_filling.py)
+date: 2026-11-03
+input folder: validation/output_full_lock1
+NO tier is validated: boundaries and methods are unvalidated heuristics (D-007); D-028 proposed; hide-and-fill test (3.3) not built
+raw data is only read; the filled CSVs carry raw x, y and confidence next to the filled values
+
+== Parameters
+tier boundaries (frames): tier 1 = 1-4, tier 2 = 5-20, tier 3 = 21+
+occlusion confidence threshold: 0.5 (metrics.py)
+OcclusionParams: OcclusionParams(tier1_context=5, min_each_side=2, tier2_context=10, tier2_causal=False, tier2_clamp=True, tier2_mirror=True, min_acceleration_triples=3)
+joint set: the 12 body joints (shoulders, elbows, wrists, hips, knees, ankles); the five face points are not handled
+
+== Exclusion file
+# Frames excluded from gap statistics (analyze_occlusion_gaps.py --exclusions). Not footage edits: the keypoint data is untouched.
+# An excluded frame is treated like a dropped frame for joint-level counts (no observation, runs do not continue across it) but is reported separately.
+# Finding (2026-10-28, from validation/output_full/ and viewed frame 605): the ONLY confirmed wrong-person lock is IMG_2419 frames 597-614. Extra person boxes elsewhere are mostly holds, partial people or duplicate boxes; the chosen box was the climber. IMG_2419 frames 592-596 are a lost climber box (detector drop), not a wrong lock.
+# Mechanism: validate_vitpose.py's select_person_box takes the box nearest the previous centre with no distance limit, so after the climber box dropped out a bystander box was accepted, and the choice then reinforced itself (nearest to the bystander's own last position) until the bystander left the detections. Fix options are in the DECISIONS.md tracking entry (not decided here).
+# Entry REMOVED 2026-11-03 (DECISIONS.md D-027 adopted). The gated run (validation/output_full_lock1/) tracks IMG_2419 592-614 on the climber (21 frames) or drops the frame (599 and 600): evaluation/lock_rule/output_lock1/window_592_614_check.csv. The removed row was: IMG_2419.MOV,597,614,wrong-person lock (bystander on the mat); climber box dropped for 592-596 and was available again by frame 605
+# That row still describes the runs made with the earlier lock rule (validation/output/ and validation/output_full/); analyses of those folders need it back (this file at commit c4233d9 or earlier). Analyses of validation/output_full_lock1/ need no exclusion.
+video,start_frame,end_frame,reason
+
+== Code and environment
+git HEAD: 9b4973b349972aeeecfda8071a5dd2961722833c
+occlusion_handling.py, metrics.py, this script, exclusions modified since HEAD: no
+occlusion_handling.py sha256 d46159cacf6413119d5f3ace3a47fac928d6bca79c535454eb0fbccc8b51f737
+scipy: 1.17.1
+torch: 2.11.0
+transformers: 5.14.1
+ultralytics: 8.4.108
+opencv-python: 5.0.0.93
+numpy: 2.2.6
+Pillow: 12.0.0
+huggingface_hub: 1.25.1
+
+== Clips
+IMG_2412.MOV: keypoint CSV sha256 a3a2ca9a1177225c2023381163c172bcbc96e6bfb861aed1f29914feabd7d027
+IMG_2416.MOV: keypoint CSV sha256 ac441c622983fbaf64009359998a430e9cb0f967871aba9435060a7f341b6aa8
+IMG_2417.MOV: keypoint CSV sha256 baee1ad038a8d3bd12eab19f5c9b1d1e45a526467f4743c5becc94f80afd3d7b
+IMG_2419.MOV: keypoint CSV sha256 2641900228e5abe435ce5e3d10b0eea41230cc817bb424b909c0de6af417e150
+IMG_2420.MOV: keypoint CSV sha256 b3f01529c21c237144ef9a14d7e47f4554fe47a91b5f77bbee2d29bcde94b5b8
