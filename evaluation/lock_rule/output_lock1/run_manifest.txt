@@ -1,0 +1,40 @@
+Gated-lock pipeline run manifest (evaluation/lock_rule/run_manifest.py)
+date written: 2026-11-03
+run folder: validation/output_full_lock1 (new folder; validation/output and validation/output_full not written)
+command: python3 validation/validate_vitpose.py --lock-rule gated --output-dir validation/output_full_lock1
+
+== Rule (DECISIONS.md D-027, status proposed)
+lock rule: gated (DECISIONS.md D-027, proposed)
+parameters: conf_main=0.5 {'gate_g0': 0.25, 'gate_v': 0.0, 'size_s': 1.75, 'size_k': 10, 'conf_rescue': 0.1, 'release_n': None}
+max frames: all
+selection order applied after seeing the stage-2 results (not pre-registered); see evaluation/lock_rule/output_full/manifest.txt
+
+== Code state
+git HEAD at run start and now: dedb76d065b1d2b6241d884c8fa435d3f0d9b8be
+uncommitted changes to person_lock.py and validation/validate_vitpose.py (the code that determines the run) when written: none (clean tree)
+before launch (recorded then): git status of person_lock.py, validate_vitpose.py and evaluation/lock_rule showed no changes, HEAD dedb76d
+analysis scripts written after the run (compare_gated_run.py, run_manifest.py) do not affect it
+person_lock.py sha256 972a72f4e0968d46ee815f46dffe14ff1109b8439f80042f735b038ae7a83950
+validation/validate_vitpose.py sha256 a944b866123e1f0bab1278a4edd5bdb9094eaec6aad34deffda8fe14981d424b
+
+== Inputs
+person detector: validation/weights/yolov8n.pt sha256 f59b3d833e2ff32e194b5bb8e08d211dc7c5bdf144b90d2c8412c47ccfc83b36
+pose model: usyd-community/vitpose-plus-large, dataset_index 0; local HF snapshot(s): e211df377e49c89dba508ab3e83ddef13c0832b4
+clip hashes: see validation/box_cache/manifest.txt
+
+== Summary (summary.csv)
+video,total_frames,missing_detection_frames,flagged_frames,mean_confidence,processing_seconds,error
+IMG_2412.MOV,718,0,0,0.8562290123080145,156.66342568397522,
+IMG_2416.MOV,917,0,0,0.8779421587156755,199.10199785232544,
+IMG_2417.MOV,980,0,1,0.8633596689725409,226.20882105827332,
+IMG_2419.MOV,850,2,0,0.8674028810324534,173.24613118171692,
+IMG_2420.MOV,2421,0,0,0.8906431886737182,1367.0516259670258,
+
+== Environment (versions at manifest time; the device used by the run is auto-detected as in validate_vitpose.py and is not recorded by it)
+torch: 2.11.0
+transformers: 5.14.1
+ultralytics: 8.4.108
+opencv-python: 5.0.0.93
+numpy: 2.2.6
+Pillow: 12.0.0
+huggingface_hub: 1.25.1

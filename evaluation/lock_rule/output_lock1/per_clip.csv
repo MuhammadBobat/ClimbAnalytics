@@ -1,0 +1,6 @@
+clip,frames,legacy_dropped,legacy_longest_untracked,gated_dropped,gated_longest_untracked,legacy_jump_max,gated_jump_max,legacy_jump_p99,gated_jump_p99,legacy_jumps_over_0_3,gated_jumps_over_0_3,legacy_hratio_flags,gated_hratio_flags,gained,lost,replaced,gained_frames,lost_frames,replaced_frames
+IMG_2412,718,2,2,0,0,0.1806,0.1806,0.0888,0.1065,0,0,0,0,2,0,0,41-42,,
+IMG_2416,917,24,8,0,0,0.2047,0.2047,0.0745,0.0883,0,0,0,0,24,0,0,"340,663-664,673,675-682,684-685,689-690,900-906,908",,
+IMG_2417,980,0,0,0,0,0.1236,0.1236,0.0605,0.0605,0,0,0,0,0,0,0,,,
+IMG_2419,850,7,5,2,2,3.1514,0.1813,0.0665,0.0648,1,0,11,0,7,2,16,"585,592-596,627",599-600,"597-598,601-614"
+IMG_2420,2421,7,3,0,0,0.1769,0.1769,0.0456,0.0492,0,0,0,0,7,0,0,"86,2282,2303,2310,2317-2319",,

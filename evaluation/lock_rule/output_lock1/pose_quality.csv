@@ -1,0 +1,20 @@
+clip,frame_set,frames,pct_keypoints_ge_0_5_all17,n_keypoints_all17,pct_keypoints_ge_0_5_8_pipeline_joints,n_keypoints_8
+IMG_2412,"all frames, gated run",718,95.3,12206,98.3,5744
+IMG_2412,"all frames, legacy run",716,95.3,12172,98.3,5728
+IMG_2412,newly tracked (legacy had no box),2,100.0,34,100.0,16
+IMG_2412,rescue-tier frames,2,100.0,34,100.0,16
+IMG_2416,"all frames, gated run",917,98.3,15589,99.0,7336
+IMG_2416,"all frames, legacy run",893,98.3,15181,99.0,7144
+IMG_2416,newly tracked (legacy had no box),24,99.0,408,100.0,192
+IMG_2416,rescue-tier frames,24,99.0,408,100.0,192
+IMG_2417,"all frames, gated run",980,94.9,16660,98.5,7840
+IMG_2417,"all frames, legacy run",980,94.9,16660,98.5,7840
+IMG_2419,"all frames, gated run",848,97.7,14416,99.4,6784
+IMG_2419,"all frames, legacy run",843,97.8,14331,99.5,6744
+IMG_2419,newly tracked (legacy had no box),7,95.8,119,96.4,56
+IMG_2419,rescue-tier frames,10,94.1,170,95.0,80
+IMG_2419,2419 window 592-614 frames with a changed box,16,92.3,272,97.7,128
+IMG_2420,"all frames, gated run",2421,98.8,41157,99.6,19368
+IMG_2420,"all frames, legacy run",2414,98.8,41038,99.6,19312
+IMG_2420,newly tracked (legacy had no box),7,85.7,119,94.6,56
+IMG_2420,rescue-tier frames,7,85.7,119,94.6,56

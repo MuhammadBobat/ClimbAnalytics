@@ -1,0 +1,11 @@
+clip,legacy_reference,frames_tracked_by_legacy_in_first_100,frames_with_any_row_differing,rows_differing,newly_tracked_frames,frames_legacy_tracked_but_run_not
+IMG_2412,validation/output (100 frames),98,0,0,41-42,
+IMG_2412,validation/output_full,98,0,0,41-42,
+IMG_2416,validation/output (100 frames),100,0,0,,
+IMG_2416,validation/output_full,100,0,0,,
+IMG_2417,validation/output (100 frames),100,0,0,,
+IMG_2417,validation/output_full,100,0,0,,
+IMG_2419,validation/output (100 frames),100,0,0,,
+IMG_2419,validation/output_full,100,0,0,,
+IMG_2420,validation/output (100 frames),99,0,0,86,
+IMG_2420,validation/output_full,99,0,0,86,

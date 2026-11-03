@@ -1,0 +1,6 @@
+clip,frames,frames_with_box_in_both,box_differs,box_present_in_only_one,tier_differs,first_differing_frame
+IMG_2412,718,718,0,0,0,
+IMG_2416,917,917,0,0,0,
+IMG_2417,980,980,0,0,0,
+IMG_2419,850,848,0,0,0,
+IMG_2420,2421,2421,0,0,0,
