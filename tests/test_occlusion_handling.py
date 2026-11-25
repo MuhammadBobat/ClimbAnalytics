@@ -75,12 +75,20 @@ def maxerr(a, b, frames):
 
 
 class BasicsTests(unittest.TestCase):
-    def test_boundaries_follow_d007(self):
+    def test_boundary_follows_d030(self):
+        """D-030: 1 to 20 frames are one class (the 5-frame boundary of D-007 is gone), over 20 is the flag-only class."""
         got = [classify_gap(n) for n in (1, 4, 5, 20, 21, 80)]
-        self.assertEqual(got, [Flag.TIER1, Flag.TIER1, Flag.TIER2, Flag.TIER2, Flag.TIER3, Flag.TIER3])
-        self.assertEqual((oh.TIER1_MAX_FRAMES, oh.TIER2_MAX_FRAMES), (4, 20))
+        self.assertEqual(got, [Flag.TIER2, Flag.TIER2, Flag.TIER2, Flag.TIER2, Flag.TIER3, Flag.TIER3])
+        self.assertEqual(oh.TIER2_MAX_FRAMES, 20)
+        self.assertFalse(hasattr(oh, "TIER1_MAX_FRAMES"))
         with self.assertRaises(ValueError):
             classify_gap(0)
+
+    def test_tier1_is_never_assigned_in_production(self):
+        joints = to_joints(rigid_skeleton(), {"left_wrist": [(10, 10), (20, 23), (40, 44), (60, 80)], "left_hip": [(100, 101)]})
+        for f in fill_gaps(joints).values():
+            self.assertNotIn(Flag.TIER1, f.flags)
+            self.assertNotIn("spline", f.methods)
 
     def test_find_gaps_causes_edges_and_excluded_walls(self):
         j = to_joints(rigid_skeleton(30), {"left_wrist": [(0, 1), (5, 5), (28, 29)]},
@@ -103,7 +111,7 @@ class BasicsTests(unittest.TestCase):
         for t, fl in enumerate(f.flags):
             if fl == Flag.OBSERVED:
                 self.assertEqual(f.positions[t], joints["left_wrist"].positions[t])
-        self.assertEqual(f.flags[10:13], [Flag.TIER1] * 3)
+        self.assertEqual(f.flags[10:13], [Flag.TIER2] * 3)       # D-030: a 3-frame gap is Kalman (was Tier 1)
 
     def test_unequal_lengths_rejected(self):
         joints = to_joints(rigid_skeleton(30))
@@ -149,7 +157,7 @@ class Tier1Tests(unittest.TestCase):
         f = fill_gaps(joints)["right_wrist"]
         self.assertEqual([e.length for e in f.events], [3, 2])
         self.assertEqual(f.flags[23], Flag.OBSERVED)
-        self.assertTrue(all(fl == Flag.TIER1 for fl in f.flags[20:23] + f.flags[24:26]))
+        self.assertTrue(all(fl == Flag.TIER2 for fl in f.flags[20:23] + f.flags[24:26]))      # D-030: Kalman (was Tier 1)
 
     def test_excluded_frame_is_a_wall(self):
         joints = to_joints(rigid_skeleton(60), {"right_wrist": [(20, 22)]})
@@ -244,47 +252,122 @@ class Tier2Tests(unittest.TestCase):
 
 
 class Tier3Tests(unittest.TestCase):
-    def test_limb_follows_the_trunk_exactly_in_the_stale_model(self):
+    """D-030: a limb gap over 20 frames gets no position, only the flag tier3."""
+
+    def test_limb_gap_over_20_has_no_position_and_the_flag(self):
         pos = rigid_skeleton()
         joints = to_joints(pos, {"left_wrist": [(30, 60)], "right_ankle": [(40, 66)]})
         filled = fill_gaps(joints)
         for name, (a, b) in (("left_wrist", (30, 60)), ("right_ankle", (40, 66))):
             f = filled[name]
             self.assertEqual(f.flags[a:b + 1], [Flag.TIER3] * (b - a + 1))
-            self.assertEqual(set(f.methods[a:b + 1]), {"trunk_offset"})
-            self.assertLess(maxerr(f.positions, pos[name], range(a, b + 1)), 1e-8)
+            self.assertEqual(f.positions[a:b + 1], [None] * (b - a + 1))
+            self.assertEqual(set(f.methods[a:b + 1]), {None})
+            self.assertEqual(set(f.sigma_px[a:b + 1]), {None})
+            e = f.events[0]
+            self.assertEqual((e.tier, e.filled, e.method), (Flag.TIER3, False, None))
+            self.assertIn("D-030", e.note)
 
-    def test_start_of_clip_uses_the_next_observed_offset(self):
-        pos = rigid_skeleton()
-        f = fill_gaps(to_joints(pos, {"left_knee": [(0, 24)]}))["left_knee"]
+    def test_exactly_20_frames_is_filled_and_21_is_flag_only(self):
+        joints = to_joints(rigid_skeleton(), {"left_wrist": [(30, 49)], "right_wrist": [(30, 50)]})
+        f = fill_gaps(joints)
+        self.assertEqual(f["left_wrist"].flags[30:50], [Flag.TIER2] * 20)
+        self.assertTrue(all(p is not None for p in f["left_wrist"].positions[30:50]))
+        self.assertEqual(f["right_wrist"].flags[30:51], [Flag.TIER3] * 21)
+        self.assertTrue(all(p is None for p in f["right_wrist"].positions[30:51]))
+
+    def test_tier3_flag_at_clip_start_and_for_a_never_observed_joint(self):
+        f = fill_gaps(to_joints(rigid_skeleton(), {"left_knee": [(0, 24)]}))["left_knee"]
         self.assertEqual(f.flags[:25], [Flag.TIER3] * 25)
-        self.assertLess(maxerr(f.positions, pos["left_knee"], range(25)), 1e-8)
+        self.assertEqual(f.positions[:25], [None] * 25)
+        g = fill_gaps(to_joints(rigid_skeleton(40), {"left_wrist": [(0, 39)]}))["left_wrist"]
+        self.assertEqual(set(g.flags), {Flag.TIER3})
+        self.assertEqual(set(g.positions), {None})
 
-    def test_never_observed_joint_is_unavailable(self):
-        pos = rigid_skeleton(40)
-        f = fill_gaps(to_joints(pos, {"left_wrist": [(0, 39)]}))["left_wrist"]
-        self.assertEqual(set(f.flags), {Flag.UNAVAILABLE})
-        self.assertIn("reference", f.events[0].note)
-
-    def test_trunk_gap_over_20_frames_is_unavailable_and_dependants_follow(self):
+    def test_trunk_gap_over_20_frames_is_unavailable_and_a_limb_gap_there_is_flag_only(self):
         pos = rigid_skeleton()
         joints = to_joints(pos, {"left_hip": [(10, 40)], "left_wrist": [(15, 45)]})
         filled = fill_gaps(joints)
         hip = filled["left_hip"]
-        self.assertEqual(hip.flags[10:41], [Flag.UNAVAILABLE] * 31)
+        self.assertEqual(hip.flags[10:41], [Flag.UNAVAILABLE] * 31)       # unchanged by D-030: the root is never tier3
         self.assertIn("root joint", hip.events[0].note)
         wrist = filled["left_wrist"]
-        self.assertEqual(wrist.flags[15:41], [Flag.UNAVAILABLE] * 26)       # the trunk frame needs all four trunk joints
-        self.assertEqual(wrist.flags[41:46], [Flag.TIER3] * 5)
-        self.assertLess(maxerr(wrist.positions, pos["left_wrist"], range(41, 46)), 1e-8)
+        self.assertEqual(wrist.flags[15:46], [Flag.TIER3] * 31)           # flag for the whole gap, trunk available or not
+        self.assertEqual(wrist.positions[15:46], [None] * 31)
 
-    def test_trunk_gap_up_to_20_frames_is_filled_first_so_the_limb_still_works(self):
+    def test_trunk_gap_up_to_20_frames_is_still_filled(self):
         pos = rigid_skeleton()
         filled = fill_gaps(to_joints(pos, {"left_hip": [(30, 45)], "left_wrist": [(25, 60)]}))
         self.assertEqual(filled["left_hip"].flags[30:46], [Flag.TIER2] * 16)
-        w = filled["left_wrist"]
-        self.assertEqual(w.flags[25:61], [Flag.TIER3] * 36)
-        self.assertLess(maxerr(w.positions, pos["left_wrist"], range(25, 61)), 1e-6)
+        self.assertEqual(filled["left_wrist"].flags[25:61], [Flag.TIER3] * 36)
+
+    def test_clamp_is_skipped_where_the_parent_has_no_position(self):
+        """D-030: the old Tier 3 position no longer serves as the clamp parent. The wrist gap lies inside an elbow gap
+        over 20 frames (elbow: no position), so there is no parent and the clamp must not act: clamp on equals clamp off."""
+        n = 80
+        pos = rigid_skeleton(n)
+        pos["right_elbow"] = [(300.0, 300.0)] * n
+        d = [90.0 + t / 3.0 if t < 30 else 95.0 for t in range(n)]
+        pos["right_wrist"] = [(300.0 + d[t], 300.0) for t in range(n)]
+        joints = to_joints(pos, {"right_elbow": [(25, 60)], "right_wrist": [(30, 39)]})
+        on = fill_gaps(joints, OcclusionParams(tier2_causal=True, tier2_clamp=True))
+        off = fill_gaps(joints, OcclusionParams(tier2_causal=True, tier2_clamp=False))
+        self.assertEqual(on["right_elbow"].positions[25:61], [None] * 36)
+        self.assertEqual(on["right_wrist"].positions[30:40], off["right_wrist"].positions[30:40])
+        self.assertTrue(all(p is not None for p in on["right_wrist"].positions[30:40]))
+        # control: with the parent observed the same clamp does change this fill (see Tier2Tests.test_clamp_keeps...)
+        joints2 = to_joints(pos, {"right_wrist": [(30, 39)]})
+        on2 = fill_gaps(joints2, OcclusionParams(tier2_causal=True, tier2_clamp=True))
+        off2 = fill_gaps(joints2, OcclusionParams(tier2_causal=True, tier2_clamp=False))
+        self.assertNotEqual(on2["right_wrist"].positions[30:40], off2["right_wrist"].positions[30:40])
+
+    def test_edge_and_noise_availability_of_the_kalman_for_short_gaps(self):
+        """D-030 (4): short gaps are now Kalman. A clip-edge gap is still unavailable (no extrapolation, 2 observed
+        frames each side); and with fewer than 3 observed consecutive triples in the whole series the noise estimate is
+        missing and the gap is unavailable (the spline did not need it: documented behaviour change)."""
+        f = fill_gaps(to_joints(rigid_skeleton(40), {"left_wrist": [(0, 0)]}))["left_wrist"]
+        self.assertEqual((f.flags[0], f.events[0].filled), (Flag.UNAVAILABLE, False))
+        f = fill_gaps(to_joints(rigid_skeleton(40), {"left_wrist": [(39, 39)]}))["left_wrist"]
+        self.assertEqual((f.flags[39], f.events[0].filled), (Flag.UNAVAILABLE, False))
+        # 7 frames, one hidden: 3 observed on each side give 1 + 1 = 2 consecutive triples, below the 3 required
+        short = fill_gaps(to_joints(rigid_skeleton(7), {"left_wrist": [(3, 3)]}))["left_wrist"]
+        self.assertEqual(short.flags[3], Flag.UNAVAILABLE)
+        self.assertIn("noise", short.events[0].note)
+        # 9 frames, one hidden: 4 observed on each side give 2 + 2 = 4 triples: filled
+        ok = fill_gaps(to_joints(rigid_skeleton(9), {"left_wrist": [(4, 4)]}))["left_wrist"]
+        self.assertEqual(ok.flags[4], Flag.TIER2)
+        self.assertEqual(oh.OcclusionParams().min_acceleration_triples, 3)
+
+    def test_forced_stale_offset_still_exact_for_evaluation(self):
+        """The old Tier 3 (D-028 item 8) is kept behind force_method for evaluation only; its behaviour is unchanged."""
+        pos = rigid_skeleton()
+        joints = to_joints(pos, {"left_wrist": [(30, 60)], "right_ankle": [(40, 66)]})
+        filled = fill_gaps(joints, OcclusionParams(force_method="trunk_offset"))
+        for name, (a, b) in (("left_wrist", (30, 60)), ("right_ankle", (40, 66))):
+            f = filled[name]
+            self.assertEqual(f.flags[a:b + 1], [Flag.TIER3] * (b - a + 1))
+            self.assertEqual(set(f.methods[a:b + 1]), {"trunk_offset"})
+            self.assertLess(maxerr(f.positions, pos[name], range(a, b + 1)), 1e-8)
+
+    def test_forced_stale_offset_at_clip_start_and_never_observed(self):
+        pos = rigid_skeleton()
+        f = fill_gaps(to_joints(pos, {"left_knee": [(0, 24)]}), OcclusionParams(force_method="trunk_offset"))["left_knee"]
+        self.assertEqual(f.flags[:25], [Flag.TIER3] * 25)
+        self.assertLess(maxerr(f.positions, pos["left_knee"], range(25)), 1e-8)
+        g = fill_gaps(to_joints(rigid_skeleton(40), {"left_wrist": [(0, 39)]}),
+                      OcclusionParams(force_method="trunk_offset"))["left_wrist"]
+        self.assertEqual(set(g.flags), {Flag.UNAVAILABLE})
+        self.assertIn("reference", g.events[0].note)
+
+    def test_forced_stale_offset_with_a_lost_trunk(self):
+        pos = rigid_skeleton()
+        P = OcclusionParams(force_method="trunk_offset")
+        wrist = fill_gaps(to_joints(pos, {"left_hip": [(10, 40)], "left_wrist": [(15, 45)]}), P)["left_wrist"]
+        self.assertEqual(wrist.flags[15:41], [Flag.UNAVAILABLE] * 26)     # the trunk frame needs all four trunk joints
+        self.assertEqual(wrist.flags[41:46], [Flag.TIER3] * 5)
+        self.assertLess(maxerr(wrist.positions, pos["left_wrist"], range(41, 46)), 1e-8)
+        # (the old property 'a trunk gap of 20 frames or less is filled first so the limb still works' needs the trunk
+        # filled by Kalman while the limb is forced; it has no production meaning now that a limb gap over 20 gets no position)
 
     def test_face_points_are_not_handled(self):
         joints = to_joints(rigid_skeleton(40))
@@ -306,7 +389,11 @@ class AdapterAndInvarianceTests(unittest.TestCase):
         self.assertEqual(js["right_wrist"].confidences[11], 0.2)             # raw confidence is carried, not invented
         self.assertIs(js["nose"], joints["nose"])
         t3 = as_joint_series(filled, include_tier3=True)
-        self.assertIsNotNone(t3["left_wrist"].positions[45])
+        self.assertIsNone(t3["left_wrist"].positions[45])                    # D-030: tier3 frames carry no position at all
+        # evaluation fill made with force_method: a tier3 frame can carry a position; excluded by default, kept if asked
+        forced = fill_gaps(joints, OcclusionParams(force_method="trunk_offset"))
+        self.assertIsNone(as_joint_series(forced)["left_wrist"].positions[45])
+        self.assertIsNotNone(as_joint_series(forced, include_tier3=True)["left_wrist"].positions[45])
         # the adapter feeds metrics.py
         self.assertIsNotNone(metrics.compute_velocity(js["right_wrist"])[11])
 
@@ -314,7 +401,7 @@ class AdapterAndInvarianceTests(unittest.TestCase):
         filled = fill_gaps(to_joints(rigid_skeleton(), {"left_wrist": [(30, 60)], "right_wrist": [(10, 12)]}))
         s = summarise(filled)
         self.assertEqual(sum(s.values()), 12 * N)
-        self.assertEqual((s["tier1"], s["tier3"]), (3, 31))
+        self.assertEqual((s["tier1"], s["tier2"], s["tier3"]), (0, 3, 31))      # D-030: the 3-frame gap is tier2
 
     def _scenario(self, **kw):
         pos = rigid_skeleton(**kw)
@@ -369,9 +456,10 @@ class ForceMethodTests(unittest.TestCase):
         a = fill_gaps(self.joints)
         b = fill_gaps(self.joints, OcclusionParams(force_method=None))
         self.assertEqual(a["left_wrist"].positions, b["left_wrist"].positions)
-        self.assertEqual(a["left_wrist"].methods[20], "spline")
+        self.assertEqual(a["left_wrist"].methods[20], "kalman")             # D-030: was "spline" below 5 frames
         self.assertEqual(a["left_wrist"].methods[45], "kalman")
-        self.assertEqual(a["left_wrist"].methods[80], "trunk_offset")
+        self.assertIsNone(a["left_wrist"].methods[80])                      # D-030: was "trunk_offset" over 20 frames
+        self.assertIsNone(a["left_wrist"].positions[80])
 
     def test_each_forced_method_runs_at_every_length(self):
         for forced, name in (("spline", "spline"), ("kalman", "kalman"), ("trunk_offset", "trunk_offset")):
@@ -382,7 +470,7 @@ class ForceMethodTests(unittest.TestCase):
 
     def test_flags_still_follow_the_length_tier_and_the_method_column_tells_the_truth(self):
         f = fill_gaps(self.joints, OcclusionParams(force_method="spline"))["left_wrist"]
-        self.assertEqual(f.flags[20], Flag.TIER1)
+        self.assertEqual(f.flags[20], Flag.TIER2)                 # D-030: there is no tier1 any more
         self.assertEqual(f.flags[45], Flag.TIER2)
         self.assertEqual(f.flags[80], Flag.TIER3)
         self.assertEqual({f.methods[45], f.methods[80]}, {"spline"})

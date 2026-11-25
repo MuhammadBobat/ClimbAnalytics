@@ -1,35 +1,36 @@
 """
-Three-tier occlusion handling (ARCHITECTURE.md §3; DECISIONS.md D-007, D-028 proposed).
+Gap handling (ARCHITECTURE.md §3; DECISIONS.md D-007, D-028 proposed, revised by D-030 adopted 2026-11-25).
 
-Fills gaps in per-joint keypoint series and flags every frame. NONE of the tiers is validated: the tier
-boundaries (under 5, 5 to 20, over 20 frames) and the fill methods are unvalidated heuristics (D-007), to be tested by
-the hide-and-fill test (step 3.3). The raw input is never modified: results are new objects, the raw series are carried
-through untouched.
+Fills gaps in per-joint keypoint series and flags every frame. NOTHING here is validated: the 20-frame cut and the fill
+method are unvalidated heuristics (D-007, D-028, D-030; hide-and-fill evidence in D-029, step 3.3). The raw input is never
+modified: results are new objects, the raw series are carried through untouched.
 
 Input: dict[str, metrics.JointSeries] from metrics.load_keypoints_csv, optionally through
 metrics.apply_frame_exclusions. A joint is "observed" at a frame when its position is not None (confidence at or above
 metrics.OCCLUSION_CONFIDENCE_THRESHOLD, 0.5, and a detected person box); everything else is a gap, whatever the cause
 (low confidence, detector drop). Excluded frames (metrics.GAP_EXCLUDED) are never filled and never bridged.
 
-Output: dict[str, FilledJoint] with a filled copy of the positions and a per-frame Flag (observed, tier1, tier2, tier3,
-unavailable). Use as_joint_series to feed metrics.py (Tier 3 positions are left out by default: ARCHITECTURE §3 says a
-stale joint is excluded from per-limb metrics).
+Output: dict[str, FilledJoint] with a filled copy of the positions and a per-frame Flag (observed, tier2, tier3,
+unavailable; tier1 is no longer assigned, see D-030). Use as_joint_series to feed metrics.py.
 
-Tiers (lengths in frames; constants below):
-  Tier 1, 1 to 4 frames: per-axis cubic spline (not-a-knot) through observed frames only, tier1_context observed
-      frames on each side, at least 2 on each side.
-  Tier 2, 5 to 20 frames: constant-velocity Kalman filter with an RTS backward pass (or forward only,
-      tier2_causal), noise estimated from the joint's own observed data; limb joints are clamped to the segment-length
-      range seen in the same clip (a stand-in for the joint-limit clamp of ARCHITECTURE §3, no angular limits are
-      sourced); trunk joints use the affine mirror of the other three trunk joints when all three are observed on every
-      frame of the gap.
-  Tier 3, over 20 frames, limb joints only: stale: placed at the offset (in torso lengths, in a trunk-aligned frame) it
-      had at the nearest observed frame, so it follows the trunk. Trunk joints are the root and are never Tier 3: a trunk
-      gap over 20 frames is unavailable, and a limb frame whose trunk is unavailable is unavailable (no circularity).
-  Gaps touching a clip start or end, or an excluded frame, have no observed frame on one side: Tier 1 and 2 leave
-  them unavailable (no extrapolation); Tier 3 uses the observed side.
-OcclusionParams.force_method (default None, behaviour unchanged) forces one method at any gap length; it exists only for the
-hide-and-fill evaluation (step 3.3, evaluation/3.3/, D-028 addendum), not for use in the pipeline.
+Handling by gap length (lengths in frames; constant below; D-030):
+  1 to 20 frames ("tier2"): constant-velocity Kalman filter with an RTS backward pass (or forward only, tier2_causal),
+      noise estimated from the joint's own observed data (needs at least min_acceleration_triples observed consecutive
+      triples in the series, else the gap stays unavailable); at least min_each_side observed frames on each side, no
+      extrapolation at a clip edge. Limb joints are clamped to the segment-length range seen in the same clip (a stand-in for
+      the joint-limit clamp of ARCHITECTURE §3, no angular limits are sourced); the clamp is skipped at a frame where the
+      parent joint has no position. Trunk joints use the affine mirror of the other three trunk joints when all three are
+      observed on every frame of the gap (the mirror is left as D-028 item 7 has it; to be decided at the first real
+      trunk gap).
+  Over 20 frames ("tier3"), limb joints: NO position is given. The frames keep position None and carry the flag tier3
+      ("gap over 20 frames, position unreliable, none given"); they are excluded from per-limb metrics by default (as every
+      None is). Trunk joints are the root and are never tier3: a trunk gap over 20 frames is unavailable.
+  Gaps touching a clip start or end, or an excluded frame, have no observed frame on one side and are left unavailable
+  (no extrapolation) when they are 1 to 20 frames long.
+OcclusionParams.force_method (default None, behaviour as above) forces one method at any gap length: "spline" (the old
+Tier 1, D-007/D-028 item 4), "kalman", or "trunk_offset" (the old Tier 3 stale offset, D-028 item 8). It exists only for the
+hide-and-fill evaluation (step 3.3, evaluation/3.3/, D-028 addendum), not for use in the pipeline; the spline and the stale
+offset are no longer used in production (D-030).
 The five face points are not handled. A confident wrong keypoint (confidence >= 0.5) is "observed" and invisible here.
 """
 
@@ -45,8 +46,8 @@ from scipy.interpolate import CubicSpline
 
 from metrics import GAP_EXCLUDED, JointSeries
 
-# D-007 boundaries (ARCHITECTURE §3): "< 5 frames", "5-20 frames", "> 20 frames". Unvalidated, step 3.3.
-TIER1_MAX_FRAMES = 4
+# D-030 (adopted 2026-11-25; supersedes the 5-frame boundary of D-007): one method for 1 to 20 frames, the cut at 20 is
+# D-007's and is an unvalidated heuristic (to be reopened as 20 against 30 if the 4.2 footage shows many gaps of 21 to 30).
 TIER2_MAX_FRAMES = 20
 
 TRUNK = ("left_shoulder", "right_shoulder", "left_hip", "right_hip")
@@ -66,7 +67,7 @@ SEGMENT_PARENT = {
 
 class Flag(str, Enum):
     OBSERVED = "observed"
-    TIER1 = "tier1"
+    TIER1 = "tier1"                    # no longer assigned in production (D-030); kept so the value and old outputs still parse
     TIER2 = "tier2"
     TIER3 = "tier3"
     UNAVAILABLE = "unavailable"
@@ -81,14 +82,14 @@ FORCE_METHODS = {"spline": Flag.TIER1, "kalman": Flag.TIER2, "trunk_offset": Fla
 @dataclass(frozen=True)
 class OcclusionParams:
     """Every tunable. None of these values is validated or sourced (D-028 proposed)."""
-    tier1_context: int = 5            # observed frames used on each side (ARCHITECTURE §3 says 5 to 10)
-    min_each_side: int = 2            # observed frames needed on each side for Tier 1 and 2
+    tier1_context: int = 5            # spline only (force_method="spline", evaluation): observed frames on each side
+    min_each_side: int = 2            # observed frames needed on each side of a gap (spline and Kalman)
     tier2_context: int = 10           # observed frames on each side in the Kalman window
     tier2_causal: bool = False        # True: forward filter only (no backward pass)
     tier2_clamp: bool = True          # segment-length clamp for limb joints
     tier2_mirror: bool = True         # affine mirror for trunk joints
     min_acceleration_triples: int = 3  # observed consecutive triples needed to estimate the noise
-    force_method: str | None = None   # EVALUATION ONLY (step 3.3, D-028 addendum): None = method by gap length (D-007);
+    force_method: str | None = None   # EVALUATION ONLY (step 3.3, D-028 addendum): None = handling by gap length (D-030);
                                       # "spline", "kalman" or "trunk_offset" = use that method for every gap whatever its
                                       # length. Flags still follow the length-based tier; the method column records the truth.
 
@@ -99,7 +100,7 @@ class GapEvent:
     first: int
     last: int
     length: int
-    tier: Flag                         # by length only: TIER1, TIER2 or TIER3
+    tier: Flag                         # by length only: TIER2 (1 to 20 frames) or TIER3 (over 20)
     filled: bool
     method: str | None                 # spline, kalman, kalman_causal, mirror, trunk_offset, or None
     touches_start: bool
@@ -121,11 +122,9 @@ class FilledJoint:
 
 
 def classify_gap(length: int) -> Flag:
-    """Tier by gap length in frames (D-007 boundaries)."""
+    """Handling class by gap length in frames (D-030): TIER2 for 1 to 20, TIER3 (flag only) for more."""
     if length < 1:
         raise ValueError("gap length must be at least 1")
-    if length <= TIER1_MAX_FRAMES:
-        return Flag.TIER1
     return Flag.TIER2 if length <= TIER2_MAX_FRAMES else Flag.TIER3
 
 
@@ -415,6 +414,7 @@ def fill_gaps(joints: dict[str, JointSeries], params: OcclusionParams = Occlusio
             branch = FORCE_METHODS[params.force_method] if params.force_method else tier  # method branch; flags use `tier`
             reasons = tuple(sorted({s.gap_reasons[t] for t in range(first, last + 1) if s.gap_reasons[t]}))
             new, method, sig, note = None, None, None, ""
+            flag_only = False
             if branch == Flag.TIER1:
                 new, method = fill_tier1(s, first, last, params), "spline"
                 note = "" if new else "fewer than the required observed frames on a side (clip edge, excluded frame or other gaps)"
@@ -438,9 +438,16 @@ def fill_gaps(joints: dict[str, JointSeries], params: OcclusionParams = Occlusio
             else:
                 if n in TRUNK:
                     note = "root joint: a trunk gap over 20 frames is unavailable (no root-freeze of the root)"
-                else:
+                elif params.force_method is None:
+                    # D-030: no position is given for a limb gap over 20 frames, only the flag
+                    flag_only = True
+                    note = "gap over 20 frames: no position given, frames flagged tier3 (D-030)"
+                else:                            # evaluation only: the old stale offset (D-028 item 8)
                     new, note = fill_tier3(s, n, work, first, last)
                     method = "trunk_offset" if new else None
+            if flag_only:
+                for t in range(first, last + 1):
+                    flags[n][t] = tier
             if new is not None:
                 for k, p in enumerate(new):
                     t = first + k
@@ -459,9 +466,9 @@ def fill_gaps(joints: dict[str, JointSeries], params: OcclusionParams = Occlusio
 
 def as_joint_series(filled: dict[str, FilledJoint], raw_joints: dict[str, JointSeries] | None = None,
                     include_tier3: bool = False) -> dict[str, JointSeries]:
-    """JointSeries for metrics.py: filled positions for observed, Tier 1 and Tier 2 frames (and Tier 3 if asked),
-    None for unavailable frames and, by default, Tier 3 frames (ARCHITECTURE §3: a stale joint is excluded from per-limb
-    metrics). Timestamps, raw gap reasons (kept where no position is given) and raw confidences are carried over. Joints
+    """JointSeries for metrics.py: filled positions for observed and Tier 2 frames (Tier 1 only for evaluation fills),
+    None for unavailable frames and for Tier 3 frames (no position is given for them, D-030; `include_tier3` only matters
+    for evaluation fills made with force_method, where a Tier 3 frame can carry a position). Timestamps, raw gap reasons (kept where no position is given) and raw confidences are carried over. Joints
     not in `filled` (the face points) are passed through from raw_joints unchanged."""
     out: dict[str, JointSeries] = dict(raw_joints or {})
     for n, f in filled.items():
