@@ -357,5 +357,59 @@ class AdapterAndInvarianceTests(unittest.TestCase):
             self.assertEqual(f.positions, c[name].positions)
 
 
+class ForceMethodTests(unittest.TestCase):
+    """OcclusionParams.force_method (evaluation only, step 3.3, D-028 addendum): default behaviour unchanged."""
+
+    def setUp(self):
+        self.pos = rigid_skeleton()
+        self.joints = to_joints(self.pos, {"left_wrist": [(20, 21), (40, 49), (70, 94)]})
+
+    def test_default_is_none_and_identical_to_the_unforced_run(self):
+        self.assertIsNone(OcclusionParams().force_method)
+        a = fill_gaps(self.joints)
+        b = fill_gaps(self.joints, OcclusionParams(force_method=None))
+        self.assertEqual(a["left_wrist"].positions, b["left_wrist"].positions)
+        self.assertEqual(a["left_wrist"].methods[20], "spline")
+        self.assertEqual(a["left_wrist"].methods[45], "kalman")
+        self.assertEqual(a["left_wrist"].methods[80], "trunk_offset")
+
+    def test_each_forced_method_runs_at_every_length(self):
+        for forced, name in (("spline", "spline"), ("kalman", "kalman"), ("trunk_offset", "trunk_offset")):
+            f = fill_gaps(self.joints, OcclusionParams(force_method=forced))["left_wrist"]
+            for first, last in ((20, 21), (40, 49), (70, 94)):
+                self.assertEqual({f.methods[t] for t in range(first, last + 1)}, {name}, (forced, first))
+                self.assertTrue(all(f.positions[t] is not None for t in range(first, last + 1)), (forced, first))
+
+    def test_flags_still_follow_the_length_tier_and_the_method_column_tells_the_truth(self):
+        f = fill_gaps(self.joints, OcclusionParams(force_method="spline"))["left_wrist"]
+        self.assertEqual(f.flags[20], Flag.TIER1)
+        self.assertEqual(f.flags[45], Flag.TIER2)
+        self.assertEqual(f.flags[80], Flag.TIER3)
+        self.assertEqual({f.methods[45], f.methods[80]}, {"spline"})
+
+    def test_forced_spline_on_a_line_is_exact_at_any_length(self):
+        pos = {j: [(2.0 * t + 5.0, -3.0 * t + 9.0) for t in range(N)] if j == "left_wrist" else p for j, p in self.pos.items()}
+        joints = to_joints(pos, {"left_wrist": [(30, 69)]})
+        f = fill_gaps(joints, OcclusionParams(force_method="spline"))["left_wrist"]
+        self.assertLess(maxerr(f.positions, pos["left_wrist"], range(30, 70)), 1e-6)
+
+    def test_forced_trunk_offset_on_a_trunk_joint_is_unavailable(self):
+        joints = to_joints(self.pos, {"left_hip": [(40, 44)]})
+        f = fill_gaps(joints, OcclusionParams(force_method="trunk_offset"))["left_hip"]
+        self.assertTrue(all(f.positions[t] is None for t in range(40, 45)))
+        self.assertTrue(all(fl == Flag.UNAVAILABLE for fl in f.flags[40:45]))
+
+    def test_forced_kalman_uses_the_trunk_mirror_unless_switched_off(self):
+        joints = to_joints(self.pos, {"left_hip": [(40, 44)]})
+        on = fill_gaps(joints, OcclusionParams(force_method="kalman"))["left_hip"]
+        off = fill_gaps(joints, OcclusionParams(force_method="kalman", tier2_mirror=False))["left_hip"]
+        self.assertEqual({on.methods[t] for t in range(40, 45)}, {"mirror"})
+        self.assertEqual({off.methods[t] for t in range(40, 45)}, {"kalman"})
+
+    def test_unknown_method_is_rejected(self):
+        with self.assertRaises(ValueError):
+            fill_gaps(self.joints, OcclusionParams(force_method="linear"))
+
+
 if __name__ == "__main__":
     unittest.main()

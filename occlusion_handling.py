@@ -28,6 +28,8 @@ Tiers (lengths in frames; constants below):
       gap over 20 frames is unavailable, and a limb frame whose trunk is unavailable is unavailable (no circularity).
   Gaps touching a clip start or end, or an excluded frame, have no observed frame on one side: Tier 1 and 2 leave
   them unavailable (no extrapolation); Tier 3 uses the observed side.
+OcclusionParams.force_method (default None, behaviour unchanged) forces one method at any gap length; it exists only for the
+hide-and-fill evaluation (step 3.3, evaluation/3.3/, D-028 addendum), not for use in the pipeline.
 The five face points are not handled. A confident wrong keypoint (confidence >= 0.5) is "observed" and invisible here.
 """
 
@@ -72,6 +74,9 @@ class Flag(str, Enum):
 
 USABLE_FLAGS = (Flag.OBSERVED, Flag.TIER1, Flag.TIER2)
 
+# OcclusionParams.force_method -> the tier branch of fill_gaps that runs (step 3.3 hide-and-fill, D-028 addendum)
+FORCE_METHODS = {"spline": Flag.TIER1, "kalman": Flag.TIER2, "trunk_offset": Flag.TIER3}
+
 
 @dataclass(frozen=True)
 class OcclusionParams:
@@ -83,6 +88,9 @@ class OcclusionParams:
     tier2_clamp: bool = True          # segment-length clamp for limb joints
     tier2_mirror: bool = True         # affine mirror for trunk joints
     min_acceleration_triples: int = 3  # observed consecutive triples needed to estimate the noise
+    force_method: str | None = None   # EVALUATION ONLY (step 3.3, D-028 addendum): None = method by gap length (D-007);
+                                      # "spline", "kalman" or "trunk_offset" = use that method for every gap whatever its
+                                      # length. Flags still follow the length-based tier; the method column records the truth.
 
 
 @dataclass(frozen=True)
@@ -384,6 +392,8 @@ def fill_tier3(series: JointSeries, name: str, positions: dict[str, list], first
 
 def fill_gaps(joints: dict[str, JointSeries], params: OcclusionParams = OcclusionParams()) -> dict[str, FilledJoint]:
     """Fill the gaps of the 12 body joints present in `joints` (see the module docstring). The input is not modified."""
+    if params.force_method is not None and params.force_method not in FORCE_METHODS:
+        raise ValueError(f"force_method must be None or one of {sorted(FORCE_METHODS)}, got {params.force_method!r}")
     names = [n for n in PROCESSING_ORDER if n in joints]
     n_frames = {len(joints[n].positions) for n in names}
     if len(n_frames) > 1:
@@ -402,12 +412,13 @@ def fill_gaps(joints: dict[str, JointSeries], params: OcclusionParams = Occlusio
         for first, last in find_gaps(s):
             length = last - first + 1
             tier = classify_gap(length)
+            branch = FORCE_METHODS[params.force_method] if params.force_method else tier  # method branch; flags use `tier`
             reasons = tuple(sorted({s.gap_reasons[t] for t in range(first, last + 1) if s.gap_reasons[t]}))
             new, method, sig, note = None, None, None, ""
-            if tier == Flag.TIER1:
+            if branch == Flag.TIER1:
                 new, method = fill_tier1(s, first, last, params), "spline"
                 note = "" if new else "fewer than the required observed frames on a side (clip edge, excluded frame or other gaps)"
-            elif tier == Flag.TIER2:
+            elif branch == Flag.TIER2:
                 if n in TRUNK and params.tier2_mirror:
                     new = fill_trunk_mirror(joints, n, first, last)
                     method = "mirror" if new else None
