@@ -25,7 +25,7 @@ Working notes for the dissertation write-up: one section per topic, one referenc
 | I. Hold detection and colour calibration | D-009, D-017, D-017a, D-022 |
 | J. Hold-relative analysis and attempt comparison | D-018, D-019, D-020 |
 
-D-025 (the full 14-joint segment-model CoM is not adopted as it stands; the trunk-centroid proxy remains the working CoM) and D-026 (the 2.2c candidate estimators, none adopted) are in topic F. D-024 (tracking failure) and D-027 (the candidate lock-rule fix, proposed) are in topic C.
+D-025 (the full 14-joint segment-model CoM is not adopted as it stands; the trunk-centroid proxy remains the working CoM) and D-026 (the 2.2c candidate estimators, none adopted) are in topic F. D-024 (tracking failure) and D-027 (the lock-rule fix, implemented, not validated) are in topic C.
 
 ---
 
@@ -95,7 +95,7 @@ D-025 (the full 14-joint segment-model CoM is not adopted as it stands; the trun
 | ID | Title | Status as in `DECISIONS.md` |
 |---|---|---|
 | D-024 | Single-climber lock-on — observed failure and options | proposed |
-| D-027 | Single-climber lock — distance gate, size check and low-confidence rescue tier (candidate fix for D-024) | proposed |
+| D-027 | Single-climber lock — distance gate, size check and low-confidence rescue tier (candidate fix for D-024) | implemented, not validated |
 
 **Question:** How is the single climber kept locked across frames, and where does the lock-on fail? D-002 and D-011 fix the box source (YOLOv8n, person class) and the selection rule; D-024 records an observed failure.
 
@@ -115,7 +115,7 @@ D-025 (the full 14-joint segment-model CoM is not adopted as it stands; the trun
 
 **Results (file paths):** `evaluation/lock_rule/output_lock1/` (`report.md`, `run_manifest.txt`, `replay_comparison.csv`, `first100_check.csv`, `per_clip.csv`, `pose_quality.csv`); `evaluation/lock_rule/output_full/` (`manifest.txt`, `replay_check.txt`, `selection.txt`, `selection_neighbours.csv`, `selected_setting.json`, `sweep_settings.csv`, `feasible_summary.txt`, `legit_ranges.txt`, `reference_track_2419.csv`, `sim_results.csv`, `sim_summary.csv`, `multibox_frames.csv`, `multibox_frames_summary.csv`, `case_2420_2380_2400.csv`, `case_2419_585_630.csv`, `changed_runs.csv`, `lists_manifest.txt`, `bytetrack_summary.csv`, `bytetrack_manifest.txt`); `validation/box_cache/` (every box at conf >= 0.05); contact sheets in `evaluation/lock_rule/sheets/` (gitignored). `validation/frame_exclusions.csv` (the one exclusion, with its reason and mechanism); D-024 in `DECISIONS.md`; `validation/output_full/summary.csv` for detection rates; `evaluation/3.1/output_full/frame_losses.csv` for detector drops and the excluded span (legacy-lock run); `evaluation/3.1/output_full_lock1/` for the gated-lock run.
 
-**Decision and status:** D-024 proposed (observation and options only; no decision on the fix); D-027 proposed (a candidate fix: `person_lock.py` with the gated rule available behind `--lock-rule gated`, default legacy; not adopted). Statuses as in the table above.
+**Decision and status:** D-024 proposed (observation and options only; no decision on the fix); D-027 implemented, not validated (adopted by the author on 2026-11-03 on five clips: `person_lock.py` with the gated rule, now the default of `validate_vitpose.py`, legacy kept as `--lock-rule legacy`; to be checked on the 4.2 footage through the rejection log). Statuses as in the table above.
 
 **What it cannot show:** (2026-11-01 and 2026-11-03 additions) The lock-rule sweep rests on one confirmed failure, the selection order was fixed after the stage-2 results were seen, the simulation hides the climber in place and never has them reappear elsewhere, so thresholds are weakly identified; the 2419 reference track is provisional until the author confirms it; the gap simulation hides the climber in real boxes and is not a real long gap (the clips contain none longer than 8 frames); the rescue-tier junk acceptance is measured only in that simulation; box identity elsewhere is not labelled. It is not a tracking error rate: it rests on one confirmed failure and a handful of spot checks, with no per-frame identity labels. No distance gate or other fix has been tried, so nothing is known about their effect. D-024 notes that a distance gate alone would stop the wrong lock but still leave the climber untracked for about the same frames.
 
