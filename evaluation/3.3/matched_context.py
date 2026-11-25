@@ -315,7 +315,10 @@ def reproduction_check(df, trials, cuts_text: str, compare_dir: Path | None) -> 
     m = old.merge(df, on=key, suffixes=("_old", "_new"))
     L.append(f"classes identical: {bool((m['motion_class_old'] == m['motion_class_new']).all())}")
     for new, oldc in (("spline_c5", "spline"), ("kalman_c10", "kalman_smooth"), ("hold", "hold")):
-        a, b = m[f"{oldc}_mean_px"].to_numpy(float), m[f"{new}_mean_px"].to_numpy(float)
+        # a column present in both files (hold) gets the merge suffixes; the others keep their names
+        ca = f"{oldc}_mean_px_old" if oldc == "hold" else f"{oldc}_mean_px"
+        cb = f"{new}_mean_px_new" if new == "hold" else f"{new}_mean_px"
+        a, b = m[ca].to_numpy(float), m[cb].to_numpy(float)
         both = ~np.isnan(a) & ~np.isnan(b)
         L.append(f"{new} against the first run's {oldc}: {int(both.sum())} trials compared, max |difference| "
                  f"{np.max(np.abs(a[both] - b[both])) if both.any() else float('nan'):.6f} px, availability identical: "
