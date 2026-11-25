@@ -1,0 +1,7 @@
+Blind sheets for gaps row 38 (evaluation/3.2/make_blind_sheets.py)
+candidates: 224 joint-frames flagged tier1 in evaluation/3.2/output_full_lock1 and tier2 in evaluation/3.2/output_full_lock1_d030
+top set: the 10 largest old-vs-new disagreements (sheets T01-T10, shuffled); random set: 10 frames from the other candidates, 2 per clip, seed 20261125 (sheets R01-R10, shuffled with seed 20261127); A/B order per frame, seed 20261126
+random set per clip: {'IMG_2412.MOV': 2, 'IMG_2416.MOV': 2, 'IMG_2417.MOV': 2, 'IMG_2419.MOV': 2, 'IMG_2420.MOV': 2}
+rule (fixed before looking): D-030 stands if the new Kalman fill is judged better or equal on at least 5 of the 10 random sheets, otherwise it is reopened; judgements A / B / equal / cannot_tell; equal counts as better-or-equal, cannot_tell does not; the top set is reported separately and does not enter the rule
+A visual judgement by one person, not an error measurement; no ground truth.
+The A/B key is in KEY_do_not_open_before_judging.csv; fill judgements_TEMPLATE.csv (copy it to judgements.csv) and run score_blind_sheets.py.
