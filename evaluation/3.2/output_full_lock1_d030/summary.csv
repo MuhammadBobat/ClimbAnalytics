@@ -1,0 +1,7 @@
+clip,frames,body_joint_frames,observed,tier1,tier2,tier3,unavailable,events_tier1_filled,events_tier1_not_filled,events_tier2_filled,events_tier2_not_filled,events_tier3_filled,events_tier3_not_filled
+IMG_2412.MOV,718,8616,8471,0,112,29,4,0,0,41,1,0,1
+IMG_2416.MOV,917,11004,10919,0,82,0,3,0,0,34,1,0,0
+IMG_2417.MOV,980,11760,11603,0,84,73,0,0,0,23,0,0,3
+IMG_2419.MOV,850,10200,10126,0,74,0,0,0,0,35,0,0,0
+IMG_2420.MOV,2421,29052,28935,0,117,0,0,0,0,39,0,0,0
+ALL,5886,70632,70054,0,469,102,7,0,0,172,2,0,4
