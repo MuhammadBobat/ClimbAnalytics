@@ -1,0 +1,31 @@
+set,method,class,crossover_length,median_diff_positive_again_later_negative,boot_p5,boot_p50,boot_p95,boot_share_no_crossover
+limb,spline,all,none through 60,False,60,none,none,0.6920
+limb,spline,smooth,none through 60,False,none,none,none,0.9840
+limb,spline,sudden,30,True,15,30,60,0.0000
+limb,kalman_smooth,all,none through 60,False,none,none,none,1.0000
+limb,kalman_smooth,smooth,none through 60,False,none,none,none,1.0000
+limb,kalman_smooth,sudden,none through 60,False,none,none,none,0.9980
+limb,kalman_smooth_noclamp,all,none through 60,False,none,none,none,1.0000
+limb,kalman_smooth_noclamp,smooth,none through 60,False,none,none,none,1.0000
+limb,kalman_smooth_noclamp,sudden,none through 60,False,none,none,none,0.9930
+limb,kalman_causal,all,1,False,1,1,2,0.0000
+limb,kalman_causal,smooth,2,False,2,2,3,0.0000
+limb,kalman_causal,sudden,1,False,1,1,1,0.0000
+limb,kalman_causal_noclamp,all,1,False,1,1,2,0.0000
+limb,kalman_causal_noclamp,smooth,2,False,2,2,3,0.0000
+limb,kalman_causal_noclamp,sudden,1,False,1,1,1,0.0000
+limb,trunk_offset,all,1,True,1,1,1,0.0000
+limb,trunk_offset,smooth,1,True,1,1,1,0.0000
+limb,trunk_offset,sudden,1,True,1,1,1,0.0000
+trunk,spline,all,none through 60,False,none,none,none,1.0000
+trunk,spline,smooth,none through 60,False,none,none,none,1.0000
+trunk,spline,sudden,none through 60,False,none,none,none,1.0000
+trunk,kalman_smooth,all,none through 60,False,none,none,none,1.0000
+trunk,kalman_smooth,smooth,none through 60,False,none,none,none,1.0000
+trunk,kalman_smooth,sudden,none through 60,False,none,none,none,1.0000
+trunk,kalman_smooth_mirror,all,1,True,1,1,none,0.2200
+trunk,kalman_smooth_mirror,smooth,1,True,1,1,none,0.1570
+trunk,kalman_smooth_mirror,sudden,1,True,1,1,none,0.3140
+trunk,kalman_causal,all,1,False,1,1,8,0.0000
+trunk,kalman_causal,smooth,5,False,2,5,10,0.0000
+trunk,kalman_causal,sudden,1,False,1,1,3,0.0000
