@@ -1,0 +1,6 @@
+cut points identical to evaluation/3.3/output_full_lock1/cutpoints.csv: True
+trial keys identical to the first run's (clip, length, joint, start): True (first run 38604, this run 38604)
+classes identical: True
+spline_c5 against the first run's spline: 38604 trials compared, max |difference| 0.000000 px, availability identical: True
+kalman_c10 against the first run's kalman_smooth: 38604 trials compared, max |difference| 0.000000 px, availability identical: True
+hold against the first run's hold: 38604 trials compared, max |difference| 0.000000 px, availability identical: True

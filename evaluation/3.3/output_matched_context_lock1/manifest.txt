@@ -1,0 +1,66 @@
+Matched-context hide-and-fill manifest (evaluation/3.3/matched_context.py)
+date: 2026-11-25
+input folder: validation/output_full_lock1
+compared with: evaluation/3.3/output_full_lock1 (reproduction_check.txt)
+NO tier is validated: truth is the pose model's own confident output (>= 0.5), not ground truth; D-007, D-028, D-029 proposed. No tier and no default is changed by this run.
+
+== Design
+gap lengths: [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 18, 19, 20, 21, 22, 25, 30, 40, 60] (40 and 60 are EXTRAPOLATION beyond the longest real gap, 30)
+contexts (observed frames on each side given to the spline AND to the Kalman filter): [5, 10]
+trials: those of hide_and_fill.py (make_trials, 10 observed frames required each side, start 10 then every 25, all 12 body joints hidden one at a time, batching with at least 60 frames between spans)
+OcclusionParams per config: {'hold': None, 'spline_c5': {'force_method': 'spline', 'tier1_context': 5}, 'kalman_c5': {'force_method': 'kalman', 'tier2_clamp': True, 'tier2_mirror': False, 'tier2_causal': False, 'tier2_context': 5}, 'spline_c10': {'force_method': 'spline', 'tier1_context': 10}, 'kalman_c10': {'force_method': 'kalman', 'tier2_clamp': True, 'tier2_mirror': False, 'tier2_causal': False, 'tier2_context': 10}}
+Kalman = the first run's kalman_smooth (smoothed, clamp on for limb joints, mirror off for trunk joints)
+error: Euclidean px, per trial the mean over the hidden frames; paired difference = Kalman minus spline at the same context
+survival rule (assistant's, descriptive, fixed in the script before the full run): pooled median paired difference < 0 and Kalman median lower in >= 4 of 5 clips
+cut points: cutpoints.csv, written at 2026-11-25T21:18:06 (run started 2026-11-25T21:17:35), before any fill was run
+Not pre-registered: nothing in this run was chosen after seeing results; any later choice is labelled in the decision log.
+
+== Trials per gap length (all joints, all clips)
+1: 2112
+2: 2076
+3: 2052
+4: 2028
+5: 2016
+6: 2016
+7: 2004
+8: 2004
+10: 1980
+12: 1944
+15: 1932
+18: 1920
+19: 1908
+20: 1908
+21: 1896
+22: 1884
+25: 1860
+30: 1788
+40: 1716
+60: 1560
+
+== Reproduction check against the first run
+cut points identical to evaluation/3.3/output_full_lock1/cutpoints.csv: True
+trial keys identical to the first run's (clip, length, joint, start): True (first run 38604, this run 38604)
+classes identical: True
+spline_c5 against the first run's spline: 38604 trials compared, max |difference| 0.000000 px, availability identical: True
+kalman_c10 against the first run's kalman_smooth: 38604 trials compared, max |difference| 0.000000 px, availability identical: True
+hold against the first run's hold: 38604 trials compared, max |difference| 0.000000 px, availability identical: True
+
+== Code and environment
+git HEAD: e80a77d866fa89d7f8aa2f2af3d5ffbb3dba84e1
+occlusion_handling.py, metrics.py, hide_and_fill.py, matched_context.py, exclusions modified since HEAD (tracked files): no
+occlusion_handling.py sha256 a9d1dbdf40e69a250c7c3bca9feadb49aa5893db5d9a024b185033850ed4408c
+numpy 2.2.6
+torch: 2.11.0
+transformers: 5.14.1
+ultralytics: 8.4.108
+opencv-python: 5.0.0.93
+numpy: 2.2.6
+Pillow: 12.0.0
+huggingface_hub: 1.25.1
+
+== Clips
+IMG_2412.MOV: keypoint CSV sha256 a3a2ca9a1177225c2023381163c172bcbc96e6bfb861aed1f29914feabd7d027
+IMG_2416.MOV: keypoint CSV sha256 ac441c622983fbaf64009359998a430e9cb0f967871aba9435060a7f341b6aa8
+IMG_2417.MOV: keypoint CSV sha256 baee1ad038a8d3bd12eab19f5c9b1d1e45a526467f4743c5becc94f80afd3d7b
+IMG_2419.MOV: keypoint CSV sha256 2641900228e5abe435ce5e3d10b0eea41230cc817bb424b909c0de6af417e150
+IMG_2420.MOV: keypoint CSV sha256 b3f01529c21c237144ef9a14d7e47f4554fe47a91b5f77bbee2d29bcde94b5b8
