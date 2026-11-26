@@ -59,6 +59,8 @@ sys.path.insert(0, str(REPO_ROOT / "evaluation" / "2.2b"))
 
 import compare_com_models as cm  # noqa: E402  (2.2b helpers)
 from metrics import (  # noqa: E402
+    GAP_LOW_CONFIDENCE,
+    GAP_MISSING_DETECTION,
     SEX_TABLES,
     JointSeries,
     apply_frame_exclusions,
@@ -87,12 +89,28 @@ from validation.analyze_occlusion_gaps import (  # noqa: E402
 CUTOFFS = (0.5, 0.6, 0.7, 0.8)   # the sweep requested by the author; not chosen here
 FIT_TOL = 1e-9                   # golden-section interval width at which the w search stops
 RAW_NOTE = "raw, unsmoothed, no gap-filling"
+FILLED_NOTE = ("D-030 gap-filled (evaluation/3.2/output_full_lock1_d030), unfiltered (5.1a adopted no filter); "
+               "positions of observed and Tier 2 (Kalman) frames, never Tier 3 or unavailable frames")
+DATA_NOTE = RAW_NOTE      # set to FILLED_NOTE by main() for --input-kind filled
 
 L_A, L_B, L_C, L_D, L_F = "A_proxy", "B_trunk_point", "C_no_head", "D_trunk_legs", "F_full"
 E_LABELS = [f"E_c{c}" for c in CUTOFFS]
 EDL_LABELS = [f"EdL_c{c}" for c in CUTOFFS]
 LABELS = [L_A, L_B, L_C, L_D, *E_LABELS, *EDL_LABELS, L_F]
 OVERLAY_LABELS = [x for x in LABELS if x not in EDL_LABELS]   # nine markers
+
+
+# Extra candidate, only with --input-kind filled (author's instruction 2026-11-26): E-dL at cut-off 0.5 whose limb gate is
+# "the joint has a position" (observed, or filled by the Kalman, never a Tier 3 frame), not the RAW confidence.
+L_EDLFILL = "EdLfill_c0.5"
+EXTRA_LABELS: list = []
+
+
+def enable_filled_candidate() -> None:
+    """Add L_EDLFILL to LABELS (in place, once). Raw-input runs never call this, so their columns are unchanged."""
+    if L_EDLFILL not in LABELS:
+        LABELS.append(L_EDLFILL)
+        EXTRA_LABELS.append(L_EDLFILL)
 
 
 def e_cutoff(label: str) -> float:
@@ -134,10 +152,40 @@ def torso_lengths(joints) -> list:
     return out
 
 
+FILLED_USABLE = ("observed", "tier1", "tier2")   # flags whose x_filled / y_filled are used (tier3, unavailable have none)
+FLAGS: dict = {}                                  # clip -> joint -> per-frame flag, filled by load_filled_csv
+
+
+def load_filled_csv(path: Path) -> dict:
+    """One 3.2 `<clip>_filled.csv` -> one JointSeries per joint. Position = (x_filled, y_filled) when the flag is observed, tier1 or
+    tier2 and the cell is not empty, else None. confidences = the RAW confidence (blank = no detection = None), as in 3.2's
+    as_joint_series, so E-dL's raw-confidence gate is unchanged. Gap reasons: missing detection when the raw confidence is blank,
+    else low confidence. Timestamps from the file."""
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    n = max(int(r["frame_idx"]) for r in rows) + 1
+    ts = [0.0] * n
+    by: dict = {}
+    for r in rows:
+        t = int(r["frame_idx"])
+        ts[t] = float(r["timestamp_s"])
+        d = by.setdefault(r["keypoint_name"], {"pos": [None] * n, "conf": [None] * n, "why": [None] * n, "flag": ["unavailable"] * n})
+        conf = float(r["confidence"]) if r["confidence"] != "" else None
+        d["conf"][t] = conf
+        d["flag"][t] = r["flag"]
+        if r["flag"] in FILLED_USABLE and r["x_filled"] != "":
+            d["pos"][t] = (float(r["x_filled"]), float(r["y_filled"]))
+        else:
+            d["why"][t] = GAP_MISSING_DETECTION if conf is None else GAP_LOW_CONFIDENCE
+    clip = rows[0]["video"]
+    FLAGS[clip] = {j: d["flag"] for j, d in by.items()}
+    return {j: JointSeries(j, d["pos"], list(ts), d["why"], d["conf"]) for j, d in by.items()}
+
+
 def load_clip_joints(csv_path: Path, excluded: set | None):
     with open(csv_path, newline="") as f:
         clip = next(csv.DictReader(f))["video"]
-    joints = load_keypoints_csv(csv_path)
+    joints = load_filled_csv(csv_path) if csv_path.name.endswith("_filled.csv") else load_keypoints_csv(csv_path)
     n = len(next(iter(joints.values())).positions)
     exc = {f for f in (excluded or set()) if 0 <= f < n}
     joints = apply_frame_exclusions(joints, exc)
@@ -212,6 +260,18 @@ def loco_weights(samples_by_clip: dict) -> list:
 
 # --- series, speed, jitter ----------------------------------------------------------------
 
+def position_gated(joints: dict) -> dict:
+    """Copies of the joints whose confidence is 1.0 wherever a position exists (observed or filled) and the original value
+    elsewhere, so that compute_com_blended's gate 'position present and confidence >= cut-off' reduces to 'position present'.
+    Used only for the extra candidate L_EDLFILL; the original joints are not modified."""
+    out = {}
+    for name, js in joints.items():
+        conf = [1.0 if p is not None else (None if js.confidences is None else js.confidences[i])
+                for i, p in enumerate(js.positions)]
+        out[name] = JointSeries(js.joint_name, js.positions, js.timestamps, js.gap_reasons, conf)
+    return out
+
+
 def build_series(joints, sex: str, w_fit: float) -> tuple[dict, dict]:
     """(label -> JointSeries, E label -> per-frame used limb segments) for all candidates."""
     w_dl = trunk_cm_fraction(sex)
@@ -228,6 +288,10 @@ def build_series(joints, sex: str, w_fit: float) -> tuple[dict, dict]:
         usage[f"E_c{c}"] = blended_limb_usage(joints, sex, w_fit, c)
         series[f"EdL_c{c}"] = compute_com_blended(joints, sex, w_dl, c)
         usage[f"EdL_c{c}"] = blended_limb_usage(joints, sex, w_dl, c)
+    if L_EDLFILL in LABELS:
+        pos_gate = position_gated(joints)
+        series[L_EDLFILL] = compute_com_blended(pos_gate, sex, w_dl, 0.5)
+        usage[L_EDLFILL] = blended_limb_usage(pos_gate, sex, w_dl, 0.5)
     return series, usage
 
 
@@ -357,7 +421,7 @@ def summary_row(name: str, label: str, comps: list) -> list:
     pairs = [(c.speeds[label][t], c.speeds[L_F][t]) for c in comps for t in range(c.n_frames)
              if c.speeds[label][t] is not None and c.speeds[L_F][t] is not None]
     absd = [abs(a - b) for a, b in pairs]
-    limb = limb_stats(comps, label) if label in E_LABELS + EDL_LABELS else ("", "")
+    limb = limb_stats(comps, label) if label in E_LABELS + EDL_LABELS + EXTRA_LABELS else ("", "")
     return [
         name, label, n_frames, sum(c.n_excluded for c in comps), sum(defined),
         _f(sum(defined) / n_frames),
@@ -508,6 +572,46 @@ def regression_check(comps: list, ref_dir: Path, expect: dict | None = None) -> 
     return ok, msgs
 
 
+def regression_check_filled(comps: list, ref_dir: Path) -> tuple[bool, list]:
+    """On the gap-filled input A and F differ from the raw run wherever a gap was filled, so the check is: on every frame where all
+    the joints a candidate uses are flagged 'observed', A and F equal the first-run (raw) columns in ref_dir/<clip>/frames.csv
+    exactly (as written, 4 decimals). A uses the four trunk joints; F uses the 12 body joints and both ears."""
+    need = {L_A: ["left_shoulder", "right_shoulder", "left_hip", "right_hip"], L_F: segment_model_joints_list()}
+    msgs, ok = [], True
+    for c in comps:
+        path = ref_dir / Path(c.clip).stem / "frames.csv"
+        if not path.exists():
+            msgs.append(f"{c.clip}: reference {path.as_posix()} not found")
+            ok = False
+            continue
+        with open(path, newline="") as f:
+            ref = list(csv.DictReader(f))
+        if len(ref) != c.n_frames:
+            msgs.append(f"{c.clip}: {len(ref)} reference frames vs {c.n_frames}")
+            ok = False
+            continue
+        fl = FLAGS[c.clip]
+        line = []
+        for label in (L_A, L_F):
+            compared = bad = 0
+            for t, r in enumerate(ref):
+                if not all(fl[j][t] == "observed" for j in need[label]):
+                    continue
+                p = c.series[label].positions[t]
+                got = (_f(p[0]), _f(p[1])) if p else ("", "")
+                compared += 1
+                bad += got != (r[f"{label}_x"], r[f"{label}_y"])
+            line.append(f"{label}: {compared} frames compared, {bad} differ")
+            ok = ok and bad == 0
+        msgs.append(f"{c.clip}: " + "; ".join(line))
+    return ok, msgs
+
+
+def segment_model_joints_list() -> list:
+    from metrics import segment_model_joints
+    return segment_model_joints("male")
+
+
 # --- manifest ---------------------------------------------------------------------------------
 
 def renormalisation_log(sex: str) -> list:
@@ -521,13 +625,14 @@ def renormalisation_log(sex: str) -> list:
 
 
 def build_manifest(comps, folds, input_dir, footage_dir, exclusions_path, paper, sex, tol,
-                   check, today=None, tri=None) -> str:
+                   check, today=None, tri=None,
+                   check_title="against evaluation/2.2b/output_full (A vs proxy, F vs seg_male)") -> str:
     ok, msgs = check if check else (None, ["not run"])
     L = [
         "CoM candidate comparison manifest (evaluation/2.2c/compare_com_candidates.py)",
         f"date: {today or date.today().isoformat()}",
         f"input folder: {input_dir.as_posix()}",
-        f"data: {RAW_NOTE}",
+        f"data: {DATA_NOTE}",
         "No candidate is chosen or ranked by this run (DECISIONS.md D-026).",
         "", "== Candidates",
         "A_proxy: equal weights on shoulders and hips (compute_com)",
@@ -537,6 +642,9 @@ def build_manifest(comps, folds, input_dir, footage_dir, exclusions_path, paper,
         f"E_c<cut>: blended, B at the fold w; cut-offs {', '.join(str(c) for c in CUTOFFS)} (swept, not chosen)",
         f"EdL_c<cut>: blended, w = de Leva trunk CM fraction = {trunk_cm_fraction(sex):.4f} ({sex})",
         "F_full: 14-joint segment model (compute_com_segment_model)",
+        *( [f"{L_EDLFILL}: E-dL (w = de Leva trunk CM fraction) at cut-off 0.5 whose limb gate is 'the joint has a position' "
+            "(observed or Kalman-filled, never a Tier 3 frame) instead of the raw confidence; EXTRA candidate, filled input only"]
+           if L_EDLFILL in LABELS else [] ),
         f"sex table: {sex}; de Leva (1996), J Biomech 29(9):1223-1230, Table 4; local paper copy "
         f"sha256 {sha256_file(paper) if paper.exists() else 'not found'}",
         "", "== B fit",
@@ -560,7 +668,7 @@ def build_manifest(comps, folds, input_dir, footage_dir, exclusions_path, paper,
           "percentile: linear interpolation between order statistics.",
           "E limb gate: all of a segment's joints have a position and raw confidence >= cut-off "
           "(hand, foot: their single joint); trunk joints keep the D-007 0.5 rule.",
-          "", "== Regression check against evaluation/2.2b/output_full (A vs proxy, F vs seg_male)",
+          "", f"== Regression check ({check_title})",
           f"result: {'PASS' if ok else ('not run' if ok is None else 'FAIL')}"] + msgs
     if tri is not None:
         keep = survivors(tri)
@@ -598,11 +706,11 @@ def build_manifest(comps, folds, input_dir, footage_dir, exclusions_path, paper,
 
 # --- main -------------------------------------------------------------------------------------
 
-def run(input_dir: Path, exclusions_path: Path, sex: str):
-    """(comps, folds) for every *_keypoints.csv in input_dir."""
+def run(input_dir: Path, exclusions_path: Path, sex: str, pattern: str = "*_keypoints.csv"):
+    """(comps, folds) for every file matching `pattern` in input_dir (3.2 `*_filled.csv` files for --input-kind filled)."""
     exclusions = load_exclusions(exclusions_path)
     loaded = []
-    for p in sorted(input_dir.glob("*_keypoints.csv")):
+    for p in sorted(input_dir.glob(pattern)):
         clip, joints, n, n_exc, fps = load_clip_joints(p, None)
         loaded.append((p, clip))
     samples = {}
@@ -622,6 +730,11 @@ def main() -> None:
     parser.add_argument("--footage-dir", type=Path, default=Path("footage/test"))
     parser.add_argument("--out-dir", type=Path, default=Path("evaluation/2.2c"))
     parser.add_argument("--exclusions", type=Path, default=Path("validation/frame_exclusions.csv"))
+    parser.add_argument("--input-kind", choices=("raw", "filled"), default="raw",
+                        help="raw: *_keypoints.csv of validate_vitpose.py (as before); filled: the 3.2 *_filled.csv files "
+                             "(D-030 gap-filled), which adds the extra candidate EdLfill_c0.5")
+    parser.add_argument("--raw-ref", type=Path, default=Path("evaluation/2.2c/output_full_lock1"),
+                        help="(filled only) the first-run 2.2c folder whose A and F columns must be reproduced on observed frames")
     parser.add_argument("--sex", choices=SEX_TABLES, default="male")
     parser.add_argument("--paper", type=Path, default=cm.DEFAULT_PAPER,
                         help="local copy of de Leva (1996), only its SHA-256 is recorded")
@@ -632,10 +745,15 @@ def main() -> None:
                              "validation/output_full run gave 5886,5828,5349)")
     args = parser.parse_args()
 
-    if not list(args.input_dir.glob("*_keypoints.csv")):
-        print(f"No *_keypoints.csv files in {args.input_dir}.")
+    global DATA_NOTE
+    pattern = "*_filled.csv" if args.input_kind == "filled" else "*_keypoints.csv"
+    if args.input_kind == "filled":
+        enable_filled_candidate()
+        DATA_NOTE = FILLED_NOTE
+    if not list(args.input_dir.glob(pattern)):
+        print(f"No {pattern} files in {args.input_dir}.")
         return
-    comps, folds = run(args.input_dir, args.exclusions, args.sex)
+    comps, folds = run(args.input_dir, args.exclusions, args.sex, pattern)
     out_root = args.out_dir / args.input_dir.resolve().name
     out_root.mkdir(parents=True, exist_ok=True)
 
@@ -664,10 +782,15 @@ def main() -> None:
     if args.expect_coverage:
         nf, na, nfull = (int(x) for x in args.expect_coverage.split(","))
         expect = {"frames": nf, L_A: na, L_F: nfull}
-    check = regression_check(comps, args.regression_ref, expect)
+    if args.input_kind == "filled":
+        check = regression_check_filled(comps, args.raw_ref)
+        title = f"on observed frames, A and F against {args.raw_ref.as_posix()}"
+    else:
+        check = regression_check(comps, args.regression_ref, expect)
+        title = "against evaluation/2.2b/output_full (A vs proxy, F vs seg_male)"
     (out_root / "manifest.txt").write_text(build_manifest(
         comps, folds, args.input_dir, args.footage_dir, args.exclusions, args.paper, args.sex,
-        FIT_TOL, check, tri=tri))
+        FIT_TOL, check, tri=tri, check_title=title))
     print("regression check:", "PASS" if check[0] else "FAIL")
     for m in check[1]:
         print("  " + m)

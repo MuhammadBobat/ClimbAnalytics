@@ -229,7 +229,7 @@ D-025 (the full 14-joint segment-model CoM is not adopted as it stands; the trun
 
 | ID | Title | Status as in `DECISIONS.md` |
 |---|---|---|
-| D-006 | Smoothness metric — Log Dimensionless Jerk (LDLJ) | implemented (LDLJ with the cubed duration term, and SPARC; unit-tested on synthetic profiles; not yet run on any clip) |
+| D-006 | Smoothness metric — Log Dimensionless Jerk (LDLJ) | implemented (LDLJ with the cubed duration term, and SPARC; unit-tested on synthetic profiles; run on fixed windows of five clips in 5.1a as a stability check only; not run on movement segments; not validated) |
 
 **Question:** Which movement-smoothness metric should be reported, and is the formula right? D-006 adopts log dimensionless jerk (LDLJ), applied to CoM velocity.
 
@@ -247,7 +247,7 @@ D-025 (the full 14-joint segment-model CoM is not adopted as it stands; the trun
 
 **Results (file paths):** 5.1a: `evaluation/5.1a/report.md`, `evaluation/5.1a/output/` (`noise_free_per_clip.csv`, `noise_effect.csv`, `filter_effect.csv`, `ranking_stability.csv`, `slow_vs_fast.csv`, `metric_vs_peak_speed.csv`, `sparc_cutoff_at_cap.csv`, `sparc_parameter_sweep.csv`, `com_agreement_and_clip_spread.csv`, `tables.md`, `manifest.txt`), `evaluation/5.1a/noise_estimates.csv`, `evaluation/5.1a/PROTOCOL.md`; `tests/test_5_1a.py` (6 tests of the helpers). Also: `tests/test_smoothness.py` (18 synthetic and reference-docstring checks, not results on footage); the formula and checks in D-006 and register rows R8 to R10.
 
-**Decision and status:** D-006 implemented (LDLJ with the cubed duration term, and SPARC; unit-tested on synthetic profiles; not yet run on any clip) (wording set by the author on 2026-11-01; the earlier line was "implemented (formula, secondary-source verified) ..."). The code exists (`compute_ldlj`, `compute_sparc`) but has not been run on footage.
+**Decision and status:** D-006 implemented (LDLJ with the cubed duration term, and SPARC; unit-tested on synthetic profiles; run on fixed windows of five clips in 5.1a as a stability check only; not run on movement segments; not validated) (wording set by the author on 2026-11-26; the earlier line was "... not yet run on any clip"). The primary metric is unchanged (LDLJ). The code exists (`compute_ldlj`, `compute_sparc`); it has been run on fixed windows only (5.1a), not on movement segments.
 
 **What it cannot show:** 5.1a is a speed-profile stability check on fixed windows, not on movement segments, so it says nothing about how smooth a move is and cannot validate either metric; five clips of one gym, no ground truth, no known-groups check (no experience labels exist), clip orders over five clips cannot carry a significance claim; the A against E-dL comparison on movement segments waits for 4.1; the noise model (white Gaussian) is not the pose model's real error. The results are in `evaluation/5.1a/report.md` section 10 (limits). Before 5.1a: nothing about the data. The Additional files (Appendices A and B) were not read; the Gulde & Hermsdörfer corrigendum is still unread (its wording is now recorded in the D-006 addendum of 2026-11-26 from the author's statement). SPARC has no project-tuned parameters: the reference-code defaults are first-run values only, to be swept (step 5.1a). The choice of LDLJ over SPARC rests on the entry's rationale, not on a comparison on this footage. How smoothing choices would affect it is open (author's plan step 5.1a; the plan file is not in the repo).
 
@@ -268,7 +268,8 @@ D-025 (the full 14-joint segment-model CoM is not adopted as it stands; the trun
 **What was tried, in order (dates and commit hashes):** 
 1. 2026-07-27, D-003 and D-004 (`5181280`).
 2. 2026-10-04: D-003 addendum, Beltrán et al.'s method confirmed from their methodology text (Section 4.5, Eq. 9) and a possible refinement noted (comparison against 50% of the peak); first in git in `6f1eb27` (2026-10-07). D-015 (known-groups validation), reconstructed from `ARCHITECTURE.md` §7 because that section already referenced it (`e7140a7`, 2026-10-04).
-3. Nothing has been run: there is no `state_classifier.py`, no threshold sweep and no known-groups check in the repo.
+3. Planned for 4.1 (author's instruction, 2026-11-26): repeat the 5.1a sweep (`evaluation/5.1a/`, D-006 addendum) on real movement segments, then decide whether SPARC becomes co-primary with LDLJ. Not started.
+4. Nothing has been run for the classifier itself: there is no `state_classifier.py`, no threshold sweep and no known-groups check in the repo.
 
 **Data and sample sizes:** None. Climber experience level per clip, needed for the known-groups check: not recorded in the repo.
 
