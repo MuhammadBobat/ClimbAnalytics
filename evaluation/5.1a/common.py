@@ -54,7 +54,7 @@ class Clip:
         self.joints = oh.as_joint_series(self.filled, raw)
         self.n = n
         self.times = np.asarray(next(iter(raw.values())).timestamps, dtype=float)
-        self.com_edl = metrics.compute_com_working(self.joints, SEX)
+        self.com_edl = metrics.compute_com_working_edl_raw_gate(self.joints, SEX)  # E-dL, raw-confidence gate: what 5.1a used (the working CoM became EdLfill_c0.5 on 2026-11-26)
         self.com_a = metrics.compute_com(self.joints)
         self.xy_edl = to_array(self.com_edl.positions)
         self.xy_a = to_array(self.com_a.positions)

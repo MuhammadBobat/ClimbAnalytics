@@ -20,6 +20,8 @@ from metrics import (
     compute_com_trunk_legs,
     compute_com_trunk_point,
     compute_com_working,
+    compute_com_working_edl_raw_gate,
+    position_gated,
     WORKING_COM_CUTOFF,
     renormalised_specs,
     segment_model_specs,
@@ -271,26 +273,76 @@ class BlendedTests(unittest.TestCase):
 
 
 class WorkingComTests(unittest.TestCase):
+    """The fallback: E-dL at 0.5 with the raw-confidence gate (the working CoM of 2026-11-01, D-026)."""
     def test_is_edl_at_the_d007_cutoff(self):
         self.assertEqual(WORKING_COM_CUTOFF, 0.5)
         confs = {"left_wrist": 0.55, "right_knee": 0.45}
         j = joints_of(POSE, conf=0.9, confs=confs)
         for sex in SEXES:
-            got = compute_com_working(j, sex)
+            got = compute_com_working_edl_raw_gate(j, sex)
             want = compute_com_blended(j, sex, trunk_cm_fraction(sex), 0.5)
             self.assertEqual(got.positions, want.positions)
         self.assertEqual(got.joint_name, "com_working_edl_mean")
 
     def test_equals_no_head_model_when_every_joint_is_present(self):
         j = joints_of(POSE, conf=0.9)
-        a, c = at(compute_com_working(j, "male")), at(compute_com_segment_model_no_head(j, "male"))
+        a, c = at(compute_com_working_edl_raw_gate(j, "male")), at(compute_com_segment_model_no_head(j, "male"))
         self.assertAlmostEqual(a[0], c[0]); self.assertAlmostEqual(a[1], c[1])
 
     def test_defined_when_a_limb_is_lost_and_sex_is_required(self):
         pose = dict(POSE); pose["left_ankle"] = None
-        self.assertIsNotNone(at(compute_com_working(joints_of(pose), "male")))
+        self.assertIsNotNone(at(compute_com_working_edl_raw_gate(joints_of(pose), "male")))
+        with self.assertRaises(TypeError):
+            compute_com_working_edl_raw_gate(joints_of(POSE))
+
+
+class NewWorkingComTests(unittest.TestCase):
+    """The working CoM since 2026-11-26: EdLfill_c0.5 (position gate)."""
+
+    def _filled(self):
+        # left_wrist: position present (as if Kalman-filled) but raw confidence 0.2; right_knee: no position at all
+        pose = dict(POSE); pose["right_knee"] = None
+        return joints_of(pose, conf=0.9, confs={"left_wrist": 0.2, "right_knee": 0.2})
+
+    def test_equals_edlfill_on_filled_data(self):
+        j = self._filled()
+        want = compute_com_blended(position_gated(j), "male", trunk_cm_fraction("male"), 0.5)
+        self.assertEqual(compute_com_working(j, "male").positions, want.positions)
+        # a filled limb counts, a missing one does not: differs from the raw-confidence gate only through left_wrist
+        self.assertNotEqual(compute_com_working(j, "male").positions,
+                            compute_com_working_edl_raw_gate(j, "male").positions)
+
+    def test_equals_edl_on_unfilled_input(self):
+        # no gap filling: a position exists only where confidence >= 0.5
+        pose = dict(POSE); pose["left_wrist"] = None; pose["right_knee"] = None
+        j = joints_of(pose, conf=0.9, confs={"left_wrist": 0.2, "right_knee": 0.2})
+        for sex in SEXES:
+            self.assertEqual(compute_com_working(j, sex).positions, compute_com_working_edl_raw_gate(j, sex).positions)
+
+    def test_position_gated_does_not_modify_the_input_and_requires_nothing_else(self):
+        j = self._filled()
+        g = position_gated(j)
+        self.assertEqual(j["left_wrist"].confidences, [0.2])
+        self.assertEqual(g["left_wrist"].confidences, [1.0])
+        self.assertEqual(g["right_knee"].confidences, [0.2])
+
+    def test_sex_is_required(self):
         with self.assertRaises(TypeError):
             compute_com_working(joints_of(POSE))
+
+    def test_2_2c_copy_of_position_gated_agrees_with_metrics(self):
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "evaluation" / "2.2c"))
+        import compare_com_candidates as cc
+        j = self._filled()
+        a, b = cc.position_gated(j), position_gated(j)
+        self.assertEqual(sorted(a), sorted(b))
+        for n in a:
+            self.assertEqual(a[n].positions, b[n].positions)
+            self.assertEqual(a[n].confidences, b[n].confidences)
+            self.assertEqual(a[n].gap_reasons, b[n].gap_reasons)
+            self.assertEqual(a[n].joint_name, b[n].joint_name)
 
 
 class InvarianceTests(unittest.TestCase):

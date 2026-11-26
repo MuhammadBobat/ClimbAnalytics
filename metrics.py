@@ -622,19 +622,43 @@ def blended_limb_usage(
     return _blended(joints, sex, w_hip, confidence_cutoff)[1]
 
 
-# Working CoM (DECISIONS.md D-026 addendum, 2026-11-01; supersedes D-025's "proxy is the working
-# CoM" without editing D-025). Candidate E-dL at the D-007 cut-off: no gate beyond the 0.5 gap rule.
-# Chosen on the author's visual review (continuity, plausibility), not on accuracy; no ground truth.
-# The trunk-centroid proxy (compute_com) stays as the baseline. Existing callers still pass the CoM
-# explicitly; nothing calls this by default.
+# Working CoM (DECISIONS.md D-026 addenda; status proposed). The author's decision of 2026-11-26 made it EdLfill_c0.5
+# (E-dL at the D-007 cut-off whose limb gate is "the joint has a position": observed or Kalman-filled, never a Tier 3
+# frame; depends on D-030, not validated), superseding the 2026-11-01 choice of E-dL with the raw-confidence gate. That
+# earlier version is kept as compute_com_working_edl_raw_gate, the documented fallback; 5.1a and the earlier runs used it.
+# Chosen on the author's visual review and a blind review, not on accuracy; no ground truth. The trunk-centroid proxy
+# (compute_com) stays as the baseline. Existing callers still pass the CoM explicitly.
 WORKING_COM_CUTOFF = OCCLUSION_CONFIDENCE_THRESHOLD
 
 
-def compute_com_working(joints: dict[str, JointSeries], sex: str) -> JointSeries:
-    """The working CoM: compute_com_blended with w = de Leva trunk CM fraction (0.4310 male) and
-    confidence_cutoff = WORKING_COM_CUTOFF (0.5). `sex` is required, as for the segment model."""
+def position_gated(joints: dict[str, JointSeries]) -> dict[str, JointSeries]:
+    """Copies of the joints whose confidence is 1.0 wherever a position exists (observed or filled) and the original value
+    elsewhere, so the blended CoM's gate 'position present and confidence >= cut-off' reduces to 'position present'
+    (D-026 addendum 2026-11-26). The originals are not modified. On series with no gap filling a position exists only
+    where the raw confidence is at least 0.5, so the result then equals the raw-confidence gate."""
+    out = {}
+    for name, js in joints.items():
+        conf = [1.0 if p is not None else (None if js.confidences is None else js.confidences[i])
+                for i, p in enumerate(js.positions)]
+        out[name] = JointSeries(js.joint_name, js.positions, js.timestamps, js.gap_reasons, conf)
+    return out
+
+
+def compute_com_working_edl_raw_gate(joints: dict[str, JointSeries], sex: str) -> JointSeries:
+    """E-dL at cut-off 0.5 with the RAW-confidence limb gate: the working CoM of 2026-11-01 (D-026 addendum), now the
+    documented fallback. compute_com_blended with w = de Leva trunk CM fraction (0.4310 male) and confidence_cutoff =
+    WORKING_COM_CUTOFF. `sex` is required, as for the segment model."""
     series = compute_com_blended(joints, sex, trunk_cm_fraction(sex), WORKING_COM_CUTOFF)
     series.joint_name = f"com_working_edl_{sex}"
+    return series
+
+
+def compute_com_working(joints: dict[str, JointSeries], sex: str) -> JointSeries:
+    """The working CoM since 2026-11-26 (D-026 addendum, proposed): EdLfill_c0.5, E-dL at cut-off 0.5 whose limb gate is
+    'the joint has a position' (observed or Kalman-filled, never a Tier 3 frame, D-030). Feed it the gap-filled joints
+    (occlusion_handling.as_joint_series); depends on D-030, not validated. Fallback: compute_com_working_edl_raw_gate."""
+    series = compute_com_blended(position_gated(joints), sex, trunk_cm_fraction(sex), WORKING_COM_CUTOFF)
+    series.joint_name = f"com_working_edlfill_{sex}"
     return series
 
 
