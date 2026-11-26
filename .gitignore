@@ -268,3 +268,6 @@ validation/output_full_lock1/
 # gap-filling outputs (regenerable): evaluation/3.2/run_gap_filling.py
 evaluation/3.2/**/*_filled.csv
 evaluation/3.3/output_*/trials.csv
+
+# 5.1a raw per-window results (regenerable): evaluation/5.1a/run_sweep.py
+evaluation/5.1a/**/raw_results.npz
