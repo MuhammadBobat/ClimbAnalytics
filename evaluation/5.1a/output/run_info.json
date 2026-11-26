@@ -1,0 +1,23 @@
+{
+ "n_windows": 338,
+ "n_conditions": 101,
+ "speed_profile_check_windows": 338,
+ "speed_profile_check_mismatch": 0,
+ "clips": [
+  "IMG_2412",
+  "IMG_2416",
+  "IMG_2417",
+  "IMG_2419",
+  "IMG_2420"
+ ],
+ "levels": [
+  0.0025,
+  0.005,
+  0.01,
+  0.02,
+  0.04
+ ],
+ "n_seeds": 20,
+ "seed0": 20261126,
+ "seconds": 85
+}

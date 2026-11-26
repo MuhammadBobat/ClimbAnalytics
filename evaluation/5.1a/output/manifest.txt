@@ -1,0 +1,19 @@
+Step 5.1a run manifest (evaluation/5.1a; PROTOCOL.md was committed before the sweep, 78cacd7)
+NOTHING here is validated: speed-profile stability check on fixed windows, not movement segments; no ground truth; five clips.
+git HEAD: 5d1e85615d2e98c268b761abdaac30ce5118d569
+code/inputs modified since HEAD (outside output/): no
+numpy 2.2.6, scipy 1.17.1
+metrics.py sha256 df4afc087825384f7e59c6f2b1e1ac767cdd556bfc357faf4bdbaca0686eddf8
+occlusion_handling.py sha256 11b7aaceaadc690623d77ddeeaa7d13d893e90b590cd37e3e331742c844292a1
+raw_results.npz sha256 b465b5107fbb212ce591b5eb5097c58e9e7fe41e64389db8a6c10ad6debbf63e (gitignored, regenerable)
+
+== run
+{"n_windows": 338, "n_conditions": 101, "speed_profile_check_windows": 338, "speed_profile_check_mismatch": 0, "clips": ["IMG_2412", "IMG_2416", "IMG_2417", "IMG_2419", "IMG_2420"], "levels": [0.0025, 0.005, 0.01, 0.02, 0.04], "n_seeds": 20, "seed0": 20261126, "seconds": 85}
+
+== checks
+IMG_2412: re-run fill vs evaluation/3.2/output_full_lock1_d030/IMG_2412_filled.csv: 8616 rows compared, 0 different
+IMG_2416: re-run fill vs evaluation/3.2/output_full_lock1_d030/IMG_2416_filled.csv: 11004 rows compared, 0 different
+IMG_2417: re-run fill vs evaluation/3.2/output_full_lock1_d030/IMG_2417_filled.csv: 11760 rows compared, 0 different
+IMG_2419: re-run fill vs evaluation/3.2/output_full_lock1_d030/IMG_2419_filled.csv: 10200 rows compared, 0 different
+IMG_2420: re-run fill vs evaluation/3.2/output_full_lock1_d030/IMG_2420_filled.csv: 29052 rows compared, 0 different
+speed arrays vs metrics.speed_profile (noise-free, unfiltered, E-dL): 338 windows, 0 mismatches
