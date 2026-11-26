@@ -1,0 +1,21 @@
+sheet,judgement,note
+R01,equal,"B is more on it, but the author called them equal since ring size does not matter"
+R02,B,
+R03,B,
+R04,B,"both a bit far off, B closer"
+R05,equal,"both a bit far off, equally far off"
+R06,cannot_tell,"an anomaly, cannot tell"
+R07,equal,
+R08,equal,
+R09,B,
+R10,equal,
+T01,cannot_tell,"no single verdict given: the two following frames' observed points are far apart; A predicts the next frame (2319) better, B predicts the one after (2320) better. Mapped to cannot_tell by the assistant; top set does not enter the rule"
+T02,B,
+T03,A,the white rings on the following frames are not on the body
+T04,A,B is far off
+T05,B,B much closer; the white ring on the following frames is not on the body
+T06,B,"B is bang on, A is far"
+T07,equal,both equally far off
+T08,equal,same as T07
+T09,cannot_tell,"fast movement; both are off but in the direction of motion, between the earlier and later observed rings; hard to tell, both close to each other"
+T10,B,
